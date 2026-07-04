@@ -10,7 +10,7 @@ import {
   type RecommendationProfile,
 } from './api'
 import { MovieCard } from './components/MovieCard'
-import { Catalogue } from './components/Catalogue'
+import { Catalogue, DetailDrawer } from './components/Catalogue'
 import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
 import {
@@ -503,10 +503,17 @@ function RecommendationExpansionPanel({
   filmId,
   onNavigate,
   onClose,
+  onOpenOverlay,
 }: {
   filmId: number
   onNavigate: (id: number) => void
   onClose: () => void
+  /** "More like this" opens the full movie overlay on top, rather than
+   * replacing what's currently expanded — unlike `onNavigate`, which is
+   * still used for the "fix the match" rematch flow (that one really is
+   * correcting the currently-expanded film in place, not navigating away
+   * from it). */
+  onOpenOverlay: (id: number) => void
 }) {
   const {
     detail,
@@ -726,7 +733,7 @@ function RecommendationExpansionPanel({
               similar={similar}
               similarLoading={similarLoading}
               similarError={similarError}
-              onNavigate={onNavigate}
+              onNavigate={onOpenOverlay}
               columns={6}
             />
           </div>
@@ -754,6 +761,7 @@ function UnseenRecommendationsRow() {
   const columns = useResponsiveColumns()
 
   const [expanded, setExpanded] = useState<{ filmId: number; index: number } | null>(null)
+  const [overlayFilmId, setOverlayFilmId] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -908,8 +916,20 @@ function UnseenRecommendationsRow() {
                 filmId={expanded.filmId}
                 onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
                 onClose={() => setExpanded(null)}
+                onOpenOverlay={setOverlayFilmId}
               />
             </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {overlayFilmId != null && (
+            <DetailDrawer
+              key="detail-drawer"
+              filmId={overlayFilmId}
+              onClose={() => setOverlayFilmId(null)}
+              onNavigate={setOverlayFilmId}
+            />
           )}
         </AnimatePresence>
       </div>

@@ -305,7 +305,7 @@ function FilterBar({
 // Detail drawer
 // ---------------------------------------------------------------------------
 
-function DetailDrawer({
+export function DetailDrawer({
   filmId,
   onClose,
   onNavigate,
