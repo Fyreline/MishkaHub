@@ -275,10 +275,22 @@ async def recommend(
             # film must match every selected genre, not just one) — matches
             # the household's stated preference, not the more common
             # "broaden" multi-select convention.
+            #
+            # Bug fixed here (2026-07-04): this used to substring-match
+            # against the ENTIRE raw metadata_json blob, so a film whose
+            # keywords/overview/etc. merely happened to contain the word
+            # (e.g. Okja's "live action and animation" keyword) would match
+            # "Animation" even though its real genre list doesn't include
+            # Animation at all — confirmed live (Okja has no Animation genre
+            # but matched `?genres=Animation`). Now parses the actual
+            # `genres` array and checks real membership.
             if not f.metadata_json:
                 return False
-            meta_lower = f.metadata_json.lower()
-            if not all(g.lower() in meta_lower for g in genres):
+            try:
+                film_genres = {g["name"].lower() for g in json.loads(f.metadata_json).get("genres", [])}
+            except (json.JSONDecodeError, TypeError, AttributeError, KeyError):
+                return False
+            if not all(g.lower() in film_genres for g in genres):
                 return False
         if vibe:
             meta = json.loads(f.metadata_json) if f.metadata_json else {}
