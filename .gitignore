@@ -1,0 +1,31 @@
+# Python
+apps/server/.venv/
+__pycache__/
+*.py[cod]
+.env
+
+# Data & backups (SQLite db + working files) — keep the folders, ignore contents
+/data/*
+!/data/.gitkeep
+/backups/*
+!/backups/.gitkeep
+
+# Node / web
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+npm-debug.log*
+yarn-error.log*
+
+# Reference material (personal Letterboxd exports etc.) — keep the folder, ignore contents
+/reference/*
+!/reference/README.md
+
+# Secrets / local state
+*.local
+.secrets/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

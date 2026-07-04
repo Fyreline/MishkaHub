@@ -1,0 +1,127 @@
+# Mishka Hub — Architecture & Plan
+
+## What we're building
+
+A private movie-recommender for two people. A clean web app (hosted on GitHub Pages)
+talks to a small server running on a home PC. The server:
+
+1. Imports what we've watched from Letterboxd.
+2. Runs **classical machine learning** (not generative AI) to recommend films we haven't seen.
+3. Filters recommendations to only the streaming services / TV channels we own, in our
+   region (UK / Scotland).
+4. Gets better over time as we rate, like, and give feedback.
+5. (Optionally) logs films back to Letterboxd when we mark them watched.
+6. (Later) serves movies we own from local disk to the webOS TV.
+
+## High-level architecture
+
+```
+  ┌─────────────────────────┐        HTTPS         ┌──────────────────────────────┐
+  │  GitHub Pages (static)  │  ─────────────────▶  │  Home PC — local server       │
+  │  React + Vite + Tailwind│   via secure tunnel  │  FastAPI (Python)             │
+  │  polished movie UI      │  ◀─────────────────  │  SQLite + scikit-learn/LightFM│
+  └─────────────────────────┘                      │  TMDB client, Letterboxd sync │
+                                                    └──────────────────────────────┘
+                                                                   │
+                                        ┌──────────────────────────┼───────────────────────┐
+                                        ▼                          ▼                       ▼
+                                   TMDB API                 Letterboxd                Local media
+                              (posters, metadata,       (CSV export / RSS in;      (owned films → TV,
+                               UK watch providers)        auto-log out)             later phase)
+```
+
+### Why this split
+- **ML must run locally** (your requirement) → Python backend, since that's where the ML
+  ecosystem lives (scikit-learn, LightFM, implicit, pandas).
+- **Frontend on GitHub Pages** (your requirement) → static React app, no server cost, always
+  available. It just needs a URL to reach the home PC.
+- **The tunnel** solves the hard part: a GitHub Pages site is served over HTTPS, and browsers
+  block HTTPS pages from calling a plain `http://localhost`. A tunnel (e.g. Cloudflare Tunnel)
+  gives the home server a real HTTPS address reachable from our phones *and* the TV, anywhere.
+
+## Data sources & keys
+
+| Need | Source | Notes |
+|------|--------|-------|
+| Films we've watched + our ratings | **Letterboxd, via a fallback cascade**: automated official data export (Playwright, our own logins) → public-profile scrape → RSS feed → in-app manual | No API needed for reading. Export is authoritative and now automated on a schedule; scrape covers export breakage; RSS (~50 newest) keeps things current; in-app "seen it/rate" is the floor. Details: [PHASE-2](phases/PHASE-2-letterboxd-import.md). |
+| Posters, cast, genres, keywords | **TMDB API** (free key) | Rich metadata that also powers the content-based ML features. |
+| UK streaming availability | **TMDB `/watch/providers` (region GB)** | Powered by JustWatch. Tells us *which* service has a film. Must attribute JustWatch. |
+| Logging films back to Letterboxd | Browser automation **or** one-click pre-filled pages | Official API won't approve this use case (see below). |
+
+### Letterboxd constraint (important)
+Letterboxd's official API is request-only and they **explicitly refuse access for
+recommendation engines, data analysis, and personal projects** — which is us. So:
+- **Reading** our history: via the account data export (automated with our own logins, with a
+  public-page scrape and RSS as fallbacks — the [Phase 2 cascade](phases/PHASE-2-letterboxd-import.md)).
+  No approval needed; export automation carries the same ToS caveat as write-back and sits behind
+  the same acknowledgement gate ([credential store](phases/PHASE-2-credentials.md)).
+- **Writing** (auto-logging watched/rating/like/review): must be done by *automating the
+  website with our own login*, or by opening a pre-filled log page for us to confirm. This
+  is a product decision (see open questions).
+
+## The recommender (classical ML, phased)
+
+- **Phase A — content-based:** build a feature vector per film from TMDB (genres, keywords,
+  cast, director, decade, runtime, language, popularity). Recommend films similar to the ones
+  we rated highly. Works from day one with zero feedback ("cold start").
+- **Phase B — collaborative / hybrid:** as ratings accumulate, add matrix-factorisation
+  (LightFM or `implicit`) so it learns latent taste, blended with content features. Two users,
+  so we keep per-user profiles and a shared "watch together" mode.
+- **Phase C — active learning:** the app asks the occasional targeted question ("rate these
+  5", "A or B?") chosen to most improve the model, and folds answers back in.
+- **Always filtered** by: not-yet-seen, available on a service we own, region GB.
+
+## Accounts
+Two users only. Simple email/password with hashed credentials in SQLite, per-user taste
+profiles, plus a shared household view. Because the server is exposed via the tunnel, the API
+requires auth on every request.
+
+## Streaming-service optimisation (nice-to-have, later)
+- We tell the app which services/channels we pay for + our region; it aggregates availability.
+- "Coming soon" additions: TMDB doesn't provide reliable future dates, so this needs a
+  separate feed/scrape — parked as a stretch goal.
+- "You'd like a lot on Service X → consider subscribing" and "little for you on Service Y →
+  consider dropping it": computed from how many high-scoring recommendations each service holds.
+
+## Local media → TV (later phase)
+- Index owned movie files on the PC/Windows desktop.
+- Serve them to the webOS TV. Most robust path is DLNA/UPnP (webOS has a built-in player) or a
+  Jellyfin-style server; to be decided when we get there.
+
+## Build phases (proposed order)
+1. **Scaffold** — repo structure, FastAPI server, React app, TMDB client, health check. ✅ done (see repo).
+2. **[Import + display](phases/PHASE-2-letterboxd-import.md)** — Letterboxd import **cascade** (automated export → public scrape → RSS → in-app manual), TMDB matching, poster wall UI. Pulls the encrypted [credential store](phases/PHASE-2-credentials.md) forward from Phase 5 as a shared module.
+3. **[Recommender v1](phases/PHASE-3-recommender.md)** — content-based recs, filtered to owned services + region GB.
+4. **[Accounts + feedback](phases/PHASE-4-accounts-feedback.md)** — login (2 fixed users, JWT), ratings/likes, active learning.
+5. **[Letterboxd write-back](phases/PHASE-5-letterboxd-writeback.md)** — Playwright auto-log + one-click fallback.
+6. **[Service optimisation](phases/PHASE-6-service-optimisation.md)** — subscribe/drop suggestions.
+7. **[Local media → TV](phases/PHASE-7-local-media-tv.md)** — Jellyfin to the webOS TV, "Play on TV".
+8. **[Streaming "coming soon"](phases/PHASE-8-coming-soon.md)** (stretch) — arrivals & upcoming dates.
+
+## Documentation index
+
+Implementation-ready reference docs (each self-contained, with acceptance criteria):
+
+| Doc | Contents |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | components, data flows, auth model, tunnel/CORS topology, failure modes, attribution rules |
+| [DATA_MODEL.md](DATA_MODEL.md) | full SQLite DDL, indexes, migrations strategy (Alembic) |
+| [API.md](API.md) | every REST endpoint by phase: auth, request/response examples, error shapes |
+| [DESIGN.md](DESIGN.md) | design system: Anthropic-style tokens (verified palette/type), Letterboxd-density poster grids, 3D poster-drag physics |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | GitHub Pages workflow, Cloudflare named tunnel on macOS, launchd services, SQLite backups |
+| [phases/PHASE-2 … PHASE-8](phases/) | one implementation plan per build phase (linked above) |
+| [phases/PHASE-2-credentials.md](phases/PHASE-2-credentials.md) | shared Letterboxd credential store (macOS Keychain + Fernet) used by Phases 2 & 5 |
+
+## Locked decisions
+- [x] **Letterboxd history import:** fallback cascade — (1) automate the official data export
+      with our own logins (Playwright), (2) scrape our public profile pages when that fails,
+      (3) RSS polling for incremental freshness, (4) in-app "seen it / rate" as the always-available
+      backstop. Spec: [PHASE-2](phases/PHASE-2-letterboxd-import.md). Consequence: the encrypted
+      credential store is built in Phase 2 as a [shared module](phases/PHASE-2-credentials.md)
+      (not duplicated in Phase 5).
+- [x] **Letterboxd write-back:** auto-log via browser automation (Playwright) using our own
+      login. Credentials in the macOS Keychain via the shared store above. (Note: account
+      automation is against Letterboxd's ToS and can break if their site changes — accepted
+      trade-off for hands-off logging, acknowledged per user in the UI.)
+- [x] **Connectivity:** Cloudflare Tunnel — gives the home PC a stable HTTPS URL reachable by
+      our phones and the webOS TV from anywhere. API is auth-protected on every request.

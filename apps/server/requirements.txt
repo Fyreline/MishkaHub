@@ -1,0 +1,44 @@
+# Core web + data layer (kept lean so first install is fast & reliable).
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+pydantic-settings>=2.2
+
+# Database layer (Phase 2): SQLAlchemy 2.x ORM models + Alembic migrations
+# (see docs/DATA_MODEL.md §5), household.yaml seeding needs PyYAML.
+sqlalchemy>=2.0
+alembic>=1.13
+pyyaml>=6.0
+
+# Shared credential store (Phase 2 credentials, docs/phases/PHASE-2-credentials.md):
+# keyring -> macOS Keychain backend; cryptography -> Fernet file-backend fallback
+# and session-blob encryption.
+keyring>=25.0
+cryptography>=42.0
+
+# RSS polling importer (Phase 2 §4, §11): feedparser handles Letterboxd's
+# RSS/Atom encoding edge cases better than stdlib xml.etree.
+feedparser>=6.0
+
+# Letterboxd browser automation (Phase 2 §2 export + §3 scrape,
+# docs/phases/PHASE-2-letterboxd-import.md): playwright drives login + the
+# authenticated export download and the signed-out profile scrape (the diary
+# page is Cloudflare-gated to plain HTTP clients, so a real browser is
+# required); beautifulsoup4 parses the scraped grid/diary HTML. Pulled forward
+# from Phase 5 since the export automation shares the same stack.
+# First install also needs: python -m playwright install chromium
+playwright>=1.45
+beautifulsoup4>=4.12
+
+# Content-similarity recommender (Phase 3 §1-2, docs/phases/PHASE-3-recommender.md):
+# classical scikit-learn (TF-IDF, FeatureHasher, cosine similarity) — no
+# generative AI. scipy/numpy are scikit-learn's own core deps but are listed
+# explicitly per the doc's dependency list (§9).
+scikit-learn>=1.5
+scipy
+numpy
+
+# Added in later phases:
+#   passlib[bcrypt]        -> Phase 4 (account auth)
+#   python-jose[cryptography] -> Phase 4 (JWT sessions)
+#   pandas                 -> Phase 3 §8 (eval/reporting only, not v0)

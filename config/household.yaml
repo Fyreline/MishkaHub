@@ -1,0 +1,37 @@
+# Mishka Hub — household configuration.
+# Human-editable seed for the two members and the streaming services we pay for.
+# Phase 2/4 will load this to seed the database; update it whenever our services change.
+
+region: GB          # UK
+language: en-GB
+locale_note: Scotland (STV rather than ITV as the regional broadcaster)
+
+users:
+  - id: luminal
+    display_name: Luminal
+    letterboxd_username: Luminalmvm   # this is me
+    primary: true
+    accent: clay                       # per DESIGN.md user-identity colours
+  - id: garfield
+    display_name: Garfield
+    letterboxd_username: garfieldsama
+    primary: false
+    accent: sky
+
+# Streaming services / TV channels we subscribe to.
+# tmdb_provider_id = TMDB (JustWatch) provider id for region GB, resolved 2026-07-03.
+subscriptions:
+  - name: Netflix
+    tmdb_provider_id: 8
+  - name: Amazon Prime Video
+    tmdb_provider_id: 9
+  - name: BBC iPlayer
+    tmdb_provider_id: 38
+  - name: ITVX
+    tmdb_provider_id: 41            # ITV's streaming app (free)
+  - name: STV Player
+    tmdb_provider_id: 593           # Scotland's ITV equivalent (free)
+  - name: Apple TV+
+    tmdb_provider_id: 350
+  - name: MUBI
+    tmdb_provider_id: 11
