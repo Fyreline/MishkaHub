@@ -100,6 +100,59 @@ requires auth on every request.
 
 **Also shipped, cutting across phases:** dark mode (manual toggle, persisted, full app coverage) and a full mobile responsiveness pass (44px tap targets, full-page detail overlay with scroll-lock + progressive blur header, responsive poster grids).
 
+## Homepage/UX pass (2026-07-04, checkpoint before the next round)
+
+A second round of frontend work landed on top of the above, reshaping the homepage into its
+current form:
+
+- **Layout** — header is back to just brand + status/settings/theme. Below it: a large
+  centered title, then a full-width live-autocomplete search (debounced, poster+title/year
+  dropdown, no submit button — replaces the old submit-and-see-a-grid flow), then a divider,
+  then straight into "Something new to watch" as the page's main section. The Cat-alogue
+  itself is untouched throughout all of this, per standing instruction.
+- **Recommendation filters** — `GET /api/recommendations` gained `genres` (AND-matched — a
+  film must match every selected genre, not just one), `runtime_buckets`
+  (`under95`/`95to120`/`121to180`/`over180`, OR-matched across whichever are selected), and
+  `vibe` (reuses `vibes.py`'s existing tagging). In the UI: genres are one
+  horizontally-scrollable row, runtime buckets + a "Vibe" dropdown sit on the row below.
+- **Expand-in-place recommendation detail** — clicking a card in "Something new to watch"
+  expands a horizontal panel below the row (not the Cat-alogue's overlay), showing the exact
+  same data/controls as the normal detail view via two new shared modules
+  (`useFilmDetail.ts`, `components/FilmDetailSections.tsx`, `components/StarRatingInput.tsx`)
+  so the Cat-alogue's `DetailDrawer` and this new panel can never drift apart. A curly-bracket
+  SVG connector links the expanded panel back to the poster it came from. Clicking that same
+  poster again collapses it.
+- **"Fix the match"** — a hidden-by-default "Wrong film?" link in the detail view lets the
+  household search TMDB and re-point a wrongly-matched film's whole watch/rating/like/review
+  history to the correct one (`POST /api/films/{id}/rematch`). Already used once for real: a
+  "Wake Up Dead Man" diary entry that had matched an unrelated film instead of the Knives Out
+  sequel.
+- **Progressive loading** — `useFilmDetail` now fetches the core detail, availability, and
+  "more like this" independently (previously detail+availability were bundled), each with its
+  own skeleton, so parts of a card appear as their own data arrives rather than one block wait.
+- **Animations** — both the Cat-alogue's `DetailDrawer` and the new expansion panel now
+  fade/slide in and out via `motion`'s `AnimatePresence` instead of popping instantly.
+
+**Known rough edges going into the next round (user-flagged, not yet fixed):**
+- "Watch now" currently links to the film's TMDB watch page, which requires an extra click
+  through to the actual streaming service — the ask is a link that lands as close to directly
+  on the service (ideally the title, realistically a service-side search) as possible.
+- The backdrop-image fade behind the expansion panel's title/synopsis reads fine in most
+  cases but can lose contrast against a busy or light-toned frame, depending on light/dark
+  mode — needs a stronger, theme-aware scrim (darken in dark mode, lighten in light mode)
+  *without* changing the text's own color.
+- The brace connector is a single smooth arc; the ask is a more authentic curly-brace shape
+  (edges dipping down into the panel, a shoulder hump, a tighter/steeper point at the peak)
+  plus a smooth sliding transition when the expanded card changes rather than an instant jump.
+
+**Backlog beyond the current round** (unchanged from the phase table above, restated here for
+one-stop visibility): real per-user accounts/auth (Phase 4, currently an interim bearer token),
+Letterboxd write-back (Phase 5), the "you'd benefit from adding/dropping service X" suggestion
+engine (Phase 6 — the settings *page* to change subscriptions is done, the *suggestion logic*
+is not), local media → TV (Phase 7), and streaming "coming soon" dates (Phase 8, stretch). Also
+still deferred from Phase 3: the temporal-holdout evaluation harness (§8) and a nightly
+retrain scheduler (§6) — recompute-per-request remains fine at the current corpus size.
+
 ## Documentation index
 
 Implementation-ready reference docs (each self-contained, with acceptance criteria):
