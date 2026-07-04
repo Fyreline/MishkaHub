@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useSpring, useTransform } from 'motion/react'
 import {
   api,
   type FilmDetail,
@@ -422,9 +422,35 @@ function FilterPill({
  * "vaguely like a curly bracket on its side," coming out of the panel to
  * meet the card it expanded from. `peakPercent` positions the peak; the two
  * arms always run the panel's full width regardless of column count. */
-function BraceConnector({ peakPercent }: { peakPercent: number }) {
+// Builds a real curly-brace-like path: edges dip DOWN into the panel, rise
+// to a shoulder hump, then a tighter, steeper curve to a sharp point at the
+// peak (mirrored on the right) — the shape an actual "{" has (two curves
+// plus a distinct central tooth), not a single smooth arc.
+function bracePath(peakPercent: number): string {
   const p = Math.max(4, Math.min(96, peakPercent))
-  const d = `M0,18 C${p * 0.55},18 ${p * 0.82},2 ${p},2 C${p + (100 - p) * 0.18},2 ${p + (100 - p) * 0.45},18 100,18`
+  const rightSpan = 100 - p
+  const leftShoulderX = p * 0.42
+  const rightShoulderX = p + rightSpan * 0.58
+  return [
+    `M0,19`,
+    `C${p * 0.15},19 ${p * 0.25},8 ${leftShoulderX},7`,
+    `C${p * 0.58},6 ${p * 0.85},1.5 ${p},0`,
+    `C${p + rightSpan * 0.15},1.5 ${p + rightSpan * 0.42},6 ${rightShoulderX},7`,
+    `C${p + rightSpan * 0.75},8 ${p + rightSpan * 0.85},19 100,19`,
+  ].join(' ')
+}
+
+/** Links the expansion panel back to the poster it came from — edges dip
+ * down into the panel, a shoulder hump, then a sharp point at the peak
+ * (see bracePath). The peak position is spring-animated (not snapped) so
+ * switching between recommendation cards slides the whole shape smoothly
+ * to the new one instead of jumping. */
+function BraceConnector({ peakPercent }: { peakPercent: number }) {
+  const spring = useSpring(peakPercent, { stiffness: 260, damping: 32 })
+  useEffect(() => {
+    spring.set(peakPercent)
+  }, [peakPercent, spring])
+  const d = useTransform(spring, bracePath)
   return (
     <svg
       viewBox="0 0 100 20"
@@ -432,7 +458,7 @@ function BraceConnector({ peakPercent }: { peakPercent: number }) {
       aria-hidden
       className="pointer-events-none mt-1 h-5 w-full text-clay/60"
     >
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <motion.path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
@@ -525,12 +551,23 @@ function RecommendationExpansionPanel({
               <img src={detail.backdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
             )}
             {detail.backdrop && (
+              // Two stacked layers, not one: a UNIFORM wash across the whole
+              // image (first layer, painted on top) guarantees baseline
+              // contrast everywhere — including under the title text at the
+              // very left edge, which the gradient alone doesn't reach —
+              // plus the left-to-right gradient (second layer) still ramps
+              // up to fully solid further right, behind the synopsis. Both
+              // tied to --color-paper-mid, which is dark in dark mode and
+              // light in light mode, so this darkens/lightens the image
+              // correctly per theme without touching any text color.
               <div
                 className="absolute inset-0"
                 aria-hidden
                 style={{
-                  background:
-                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 30%, transparent) 0%, var(--color-paper-mid) 45%)',
+                  background: [
+                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 55%, transparent) 0%, var(--color-paper-mid) 42%)',
+                    'color-mix(in srgb, var(--color-paper-mid) 40%, transparent)',
+                  ].join(', '),
                 }}
               />
             )}
@@ -629,7 +666,12 @@ function RecommendationExpansionPanel({
               onToggleLiked={handleToggleLiked}
               onMarkSeen={handleMarkSeen}
             />
-            <WhereToWatchSection availability={availability} loading={availabilityLoading} error={availabilityError} />
+            <WhereToWatchSection
+              availability={availability}
+              filmTitle={detail.title}
+              loading={availabilityLoading}
+              error={availabilityError}
+            />
           </div>
 
           <div className="mt-4">

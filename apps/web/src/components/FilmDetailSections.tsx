@@ -2,6 +2,30 @@ import type { FilmAvailability, FilmDetail, SimilarFilm } from '../api'
 import { userIdForKey, type UserKey } from '../useFilmDetail'
 import { StarRatingInput } from './StarRatingInput'
 
+/** TMDB provider_id -> a same-service search URL builder, for the household's
+ * real subscriptions only (config/household.yaml). TMDB's public API doesn't
+ * expose a true per-title deep link (that's JustWatch-internal), so this
+ * lands one tap from the title on the actual streaming service instead of
+ * routing through TMDB's watch page + an extra click on the provider icon.
+ * Verified reachable (real HTTP request, 2026-07-04) except ITVX, which this
+ * environment's network couldn't reach at all (not even the homepage) — its
+ * URL below is a best-effort guess, not independently confirmed like the
+ * rest; worth the household double-checking it once.
+ */
+const PROVIDER_SEARCH_URL: Record<number, (title: string) => string> = {
+  8: (t) => `https://www.netflix.com/search?q=${encodeURIComponent(t)}`, // Netflix
+  9: (t) => `https://www.primevideo.com/search/ref=atv_nb_sr?phrase=${encodeURIComponent(t)}`, // Amazon Prime Video
+  11: (t) => `https://mubi.com/search/films?query=${encodeURIComponent(t)}`, // MUBI
+  38: (t) => `https://www.bbc.co.uk/iplayer/search?q=${encodeURIComponent(t)}`, // BBC iPlayer
+  41: (t) => `https://www.itv.com/search?q=${encodeURIComponent(t)}`, // ITVX — unverified, see note above
+  350: (t) => `https://tv.apple.com/search?term=${encodeURIComponent(t)}`, // Apple TV+
+  593: (t) => `https://player.stv.tv/search?q=${encodeURIComponent(t)}`, // STV Player
+}
+
+function watchUrlFor(providerId: number, title: string, fallback: string): string {
+  return PROVIDER_SEARCH_URL[providerId]?.(title) ?? fallback
+}
+
 /** Placeholder shape for the title/meta/overview/genres block while `detail`
  * is still loading — shown instead of a plain "Loading…" so the card's
  * layout doesn't jump once real content arrives. */
@@ -138,18 +162,22 @@ export function UserRatingColumns({
 /** Streaming-only offers list (rent/buy already excluded server-side, but
  * this client-side kind filter is kept as a defensive belt-and-braces check
  * — matches the pre-existing DetailDrawer behavior exactly). Each offer is a
- * "Watch now" link straight to the film's TMDB watch page rather than a
- * flatrate/ads kind label — TMDB's public API doesn't expose a true
- * per-provider deep link, so the watch page (which itself lists/links the
- * real providers via JustWatch) is the most honest "take me there" target
- * available. Loads independently of the rest of the detail view, so it gets
- * its own skeleton/error state. */
+ * "Watch now" link straight to that service's own search for the title
+ * (see PROVIDER_SEARCH_URL above) rather than TMDB's watch page — the
+ * household's actual complaint was having to click through TMDB, then click
+ * the provider icon, to get to the real site; this skips that middle step.
+ * Falls back to `tmdb_watch_page` for any provider outside the household's
+ * known 7 (e.g. if `include_unavailable` ever surfaces something else).
+ * Loads independently of the rest of the detail view, so it gets its own
+ * skeleton/error state. */
 export function WhereToWatchSection({
   availability,
+  filmTitle,
   loading,
   error,
 }: {
   availability: FilmAvailability | null
+  filmTitle: string
   loading: boolean
   error: string | null
 }) {
@@ -181,7 +209,7 @@ export function WhereToWatchSection({
                   <span className="text-ink-mid">{o.provider_name}</span>
                   {availability?.tmdb_watch_page && (
                     <a
-                      href={availability.tmdb_watch_page}
+                      href={watchUrlFor(o.provider_id, filmTitle, availability.tmdb_watch_page)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="min-h-11 rounded-md bg-clay px-2.5 py-1 text-xs font-medium text-paper transition hover:bg-clay-deep sm:min-h-0 sm:py-1"

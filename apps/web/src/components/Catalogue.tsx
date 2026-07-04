@@ -543,6 +543,7 @@ function DetailDrawer({
 
               <WhereToWatchSection
                 availability={availability}
+                filmTitle={detail.title}
                 loading={availabilityLoading}
                 error={availabilityError}
               />
