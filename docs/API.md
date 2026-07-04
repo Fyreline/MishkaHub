@@ -89,7 +89,7 @@ FastAPI-style `detail`, extended with a machine code:
 | `GET /api/films` | poster-wall listing with filters |
 | `GET /api/films/{tmdb_id}` | full detail (metadata + both users' state); auto-hydrates from TMDB on first access if not yet in our library |
 | `GET /api/films/{tmdb_id}/availability` | GB **streaming** availability (flatrate/free/ads only — rent/buy always excluded), cached (TTL 7 d). `?subscribed_only=` (bool, default `true`) — when true, `offers` is filtered to only providers in the household's active `subscriptions`; when false, all streaming-kind offers are returned (rent/buy still excluded), each carrying a `subscribed` flag either way. |
-| `GET /api/films/{tmdb_id}/similar` | **shipped ahead of schedule as "recommender v0"** — pure content-similarity (cosine, PHASE-3-recommender.md §1-2), not yet personalised. `?limit=&max_runtime=&vibe=` (vibe ∈ slow_burn/feel_good/sad/tense/dark/quick_watch). Auto-hydrates the seed film too. See [PHASE-3 §0](phases/PHASE-3-recommender.md). |
+| `GET /api/films/{tmdb_id}/similar` | **shipped ahead of schedule as "recommender v0"** — pure content-similarity (cosine, PHASE-3-recommender.md §1-2), not yet personalised. `?limit=&max_runtime=&vibe=` (vibe ∈ slow_burn/feel_good/sad/tense/dark/quick_watch). Auto-hydrates the seed film too. Comparison corpus is filtered to films eligible for at least one of the two users (same staleness rule as `/lucky` — not-seen, or not seen in ≥365 days); the seed film itself is always kept as the comparison anchor even if already watched (2026-07-04 fix — see PHASE-3-recommender.md's "corpus expansion" status note). See [PHASE-3 §0](phases/PHASE-3-recommender.md). |
 
 ```json
 // GET /api/films?user=1&rated=true&year_from=1990&sort=watched_desc&limit=2

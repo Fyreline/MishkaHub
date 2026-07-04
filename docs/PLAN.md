@@ -90,13 +90,15 @@ requires auth on every request.
 
 ## Build phases (proposed order)
 1. **Scaffold** — repo structure, FastAPI server, React app, TMDB client, health check. ✅ done (see repo).
-2. **[Import + display](phases/PHASE-2-letterboxd-import.md)** — Letterboxd import **cascade** (automated export → public scrape → RSS → in-app manual), TMDB matching, poster wall UI. Pulls the encrypted [credential store](phases/PHASE-2-credentials.md) forward from Phase 5 as a shared module.
-3. **[Recommender v1](phases/PHASE-3-recommender.md)** — content-based recs, filtered to owned services + region GB.
-4. **[Accounts + feedback](phases/PHASE-4-accounts-feedback.md)** — login (2 fixed users, JWT), ratings/likes, active learning.
-5. **[Letterboxd write-back](phases/PHASE-5-letterboxd-writeback.md)** — Playwright auto-log + one-click fallback.
-6. **[Service optimisation](phases/PHASE-6-service-optimisation.md)** — subscribe/drop suggestions.
-7. **[Local media → TV](phases/PHASE-7-local-media-tv.md)** — Jellyfin to the webOS TV, "Play on TV".
-8. **[Streaming "coming soon"](phases/PHASE-8-coming-soon.md)** (stretch) — arrivals & upcoming dates.
+2. **[Import + display](phases/PHASE-2-letterboxd-import.md)** — Letterboxd import **cascade** (automated export → public scrape → RSS → in-app manual), TMDB matching, poster wall UI (the "Cat-alogue"). ✅ done — full CSV backfill for both people, RSS sync, manual-resolution queue with an auto-matcher, in-app rating/liked/watched editing (Letterboxd stays source of truth until overridden). Encrypted [credential store](phases/PHASE-2-credentials.md) built and used; the export-automation/scrape legs are real but documented as Cloudflare-blocked in practice — CSV export + RSS are the reliable path day to day.
+3. **[Recommender v1](phases/PHASE-3-recommender.md)** — content-based + personalised recs, filtered to owned services + region GB. ✅ shipped: content-similarity ("more like this"), "Feeling Lucky", and a per-user taste model (Ridge + prototype blend, MMR-diversified) over a TMDB-discovered candidate pool (thousands of films, still growing). Everything respects "not seen, or not seen in ≥365 days." Evaluation harness (§8) and the nightly retrain scheduler (§6) are the main pieces still deferred.
+4. **[Accounts + feedback](phases/PHASE-4-accounts-feedback.md)** — login (2 fixed users, JWT), ratings/likes, active learning. ⬜ not started — an interim bearer token gates the API today; rating/liked/watched feedback loops already work (Phase 2/3 above), just not behind real per-user auth yet.
+5. **[Letterboxd write-back](phases/PHASE-5-letterboxd-writeback.md)** — Playwright auto-log + one-click fallback. ⬜ not started (in-app overrides exist; they don't sync back to Letterboxd yet).
+6. **[Service optimisation](phases/PHASE-6-service-optimisation.md)** — subscribe/drop suggestions. 🟡 partially done — a Settings page now lets the household pick which streaming services they subscribe to (backed by `GET/PUT /api/settings/subscriptions`, `GET /api/providers`), which the whole availability/recommendation pipeline already respects. The "you'd benefit from adding/dropping service X" *suggestion* logic itself is still ⬜ not built.
+7. **[Local media → TV](phases/PHASE-7-local-media-tv.md)** — Jellyfin to the webOS TV, "Play on TV". ⬜ not started.
+8. **[Streaming "coming soon"](phases/PHASE-8-coming-soon.md)** (stretch) — arrivals & upcoming dates. ⬜ not started.
+
+**Also shipped, cutting across phases:** dark mode (manual toggle, persisted, full app coverage) and a full mobile responsiveness pass (44px tap targets, full-page detail overlay with scroll-lock + progressive blur header, responsive poster grids).
 
 ## Documentation index
 

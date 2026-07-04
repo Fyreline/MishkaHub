@@ -204,5 +204,20 @@ Anthropic-calm: plain sentences, no exclamation marks, no "🎉". "Nothing on yo
 - [ ] Vertical scrolling over the grid is never hijacked — un-engaged drags scroll the page (test slow + fast flicks).
 - [ ] `prefers-reduced-motion: reduce` → zero 3D motion, scale-only feedback.
 - [ ] Drag stays ≥55fps on a mid-range Android profile with a 200-poster grid.
-- [ ] Dark variant tokens documented (this doc) even though light ships first.
+- [x] Dark variant tokens documented (this doc) even though light ships first — see §6, shipped 2026-07-04.
 - [ ] Attribution lines (TMDB/JustWatch, [ARCHITECTURE.md](ARCHITECTURE.md) §6) restyled in `ink-soft` mono 11px and present in the new footer.
+
+## 6. Dark mode (shipped 2026-07-04)
+
+Class-based, not media-query-based — a manual toggle beats the OS preference so the two
+people can choose independently of their device setting. `apps/web/src/index.css` declares
+`@custom-variant dark (&:where(.dark, .dark *));` (Tailwind v4's documented class-variant
+hook) and a `.dark { --color-*: ... }` block overriding every §1a token in place, so existing
+utility classes (`bg-paper`, `text-ink`, `border-line`, …) repaint automatically once `.dark`
+lands on `<html>` — no `dark:` variant hunting needed across the app for token-based colours.
+A few non-token spots (the `DetailDrawer` scroll-blur header's inline `backgroundColor`) do
+carry explicit dark-aware values since they read CSS variables directly rather than through
+a Tailwind class.
+
+`ThemeToggle` (`apps/web/src/components/ThemeToggle.tsx`) persists the choice to
+`localStorage` (`mishka-theme`), defaulting to the OS `prefers-color-scheme` on first visit.
