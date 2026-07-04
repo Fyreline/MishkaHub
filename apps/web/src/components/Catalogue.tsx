@@ -1159,15 +1159,17 @@ export function Catalogue() {
     // of which id we request — that id only decides which side is labelled
     // `my` vs `partner`. For 'me'/'partner' the Cat-alogue should show ONLY
     // that person's watched films (this is their diary, not the whole
-    // library), so filter server-side via `seen=true` — this keeps the
-    // returned `total`/pagination correct. 'both'/'either' have no single-user
-    // server param; they narrow the already-fetched rows client-side instead
-    // (see `visibleFilms`) — a known limitation: pagination totals for those
-    // two modes reflect the unfiltered fetch, not the narrowed count.
+    // library), so filter server-side via `seen=true`. 'both'/'either' use
+    // the household-wide `seen_by` param instead (2026-07-04 fix — these
+    // used to fall through to an unfiltered fetch narrowed client-side,
+    // which desynced `total`/pagination from what was actually shown and
+    // made "load more" add only a handful of visible cards per page).
     p.user = resolveUserId(userFilter)
     if (userFilter === 'me' || userFilter === 'partner') p.seen = true
+    if (userFilter === 'both' || userFilter === 'either') p.seen_by = userFilter
     if (ratedOnly) p.rated = true
     if (likedOnly) p.liked = true
+    if (minRating > 0) p.min_rating = minRating
     if (decade) {
       p.year_from = decade
       p.year_to = decade + 9
@@ -1175,7 +1177,7 @@ export function Catalogue() {
     if (genre) p.genre = genre
     if (debouncedSearch) p.q = debouncedSearch
     return p
-  }, [userFilter, ratedOnly, likedOnly, decade, genre, debouncedSearch, sort])
+  }, [userFilter, ratedOnly, likedOnly, minRating, decade, genre, debouncedSearch, sort])
 
   const filtersActive =
     userFilter !== 'either' || ratedOnly || likedOnly || !!decade || !!genre || minRating > 0 || !!debouncedSearch
@@ -1223,18 +1225,10 @@ export function Catalogue() {
     }
   }
 
-  const visibleFilms = useMemo(() => {
-    let out = films
-    if (userFilter === 'both') {
-      out = out.filter((f) => f.my.watch_count > 0 && f.partner.watch_count > 0)
-    } else if (userFilter === 'either') {
-      out = out.filter((f) => f.my.watch_count > 0 || f.partner.watch_count > 0)
-    }
-    if (minRating > 0) {
-      out = out.filter((f) => (f.my.rating ?? 0) >= minRating || (f.partner.rating ?? 0) >= minRating)
-    }
-    return out
-  }, [films, userFilter, minRating])
+  // userFilter (both/either) and minRating are now applied server-side via
+  // `params` (seen_by / min_rating) so `total`/pagination stay accurate —
+  // see the params useMemo above. `films` is already the filtered set.
+  const visibleFilms = films
 
   const isEmpty = total === 0 && !loading && !error
   const showConnectCard = isEmpty && !filtersActive

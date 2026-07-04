@@ -23,10 +23,15 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ..availability import get_provider_catalogue, needs_refresh, refresh_film_availability
+from ..availability import (
+    dedupe_offers_by_provider,
+    get_provider_catalogue,
+    needs_refresh,
+    refresh_film_availability,
+)
 from ..clients.tmdb import TMDBClient, TMDBError
 from ..db import get_session
 from ..errors import MishkaHTTPException
@@ -104,8 +109,26 @@ async def list_films(
     request: Request,
     user: int | None = Query(default=None, description="1 or 2 — filter to this user's activity"),
     seen: bool | None = Query(default=None),
+    seen_by: Literal["both", "either"] | None = Query(
+        default=None,
+        description=(
+            "Household-wide watched filter, independent of `user`/`seen`: "
+            "'both' = both users (1 and 2) have watched it, 'either' = at "
+            "least one has. Exists because the Cat-alogue's Both/Either "
+            "toggle has no single-user equivalent — without this the "
+            "frontend had to fetch a page unfiltered and narrow it "
+            "client-side, which desynced pagination/totals from what was "
+            "actually shown (2026-07-04 fix)."
+        ),
+    ),
     rated: bool | None = Query(default=None),
     liked: bool | None = Query(default=None),
+    min_rating: float | None = Query(
+        default=None,
+        ge=0.5,
+        le=5.0,
+        description="Household-wide: either user's rating >= this value.",
+    ),
     year_from: int | None = Query(default=None),
     year_to: int | None = Query(default=None),
     genre: str | None = Query(default=None),
@@ -128,6 +151,19 @@ async def list_films(
         # no dedicated genre column/table exists yet, so this is a best-effort
         # substring match against the stored JSON blob.
         stmt = stmt.where(Film.metadata_json.ilike(f"%{genre}%"))
+
+    if seen_by is not None:
+        watched_1 = select(Watch.film_id).where(Watch.user_id == 1)
+        watched_2 = select(Watch.film_id).where(Watch.user_id == 2)
+        if seen_by == "both":
+            stmt = stmt.where(Film.id.in_(watched_1)).where(Film.id.in_(watched_2))
+        else:
+            stmt = stmt.where(or_(Film.id.in_(watched_1), Film.id.in_(watched_2)))
+
+    if min_rating is not None:
+        rated_1 = select(Rating.film_id).where(Rating.user_id == 1, Rating.rating >= min_rating)
+        rated_2 = select(Rating.film_id).where(Rating.user_id == 2, Rating.rating >= min_rating)
+        stmt = stmt.where(or_(Film.id.in_(rated_1), Film.id.in_(rated_2)))
 
     if seen is not None or rated is not None or liked is not None:
         if user is None:
@@ -473,6 +509,11 @@ async def get_film_availability(
         }
         for row in rows
     ]
+    # A single real-world service can carry more than one `kind` row for the
+    # same film (e.g. a flatrate slot and a separate ad-supported slot) —
+    # collapse those down to one entry so "Where to watch" never shows the
+    # same provider name twice.
+    offers = dedupe_offers_by_provider(offers)
 
     # fetched_at should reflect the cache freshness regardless of filtering,
     # so look it up from the full (unfiltered-by-kind) cache rather than

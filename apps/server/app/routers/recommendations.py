@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..availability import get_provider_catalogue
+from ..availability import dedupe_offers_by_provider, get_provider_catalogue
 from ..clients.tmdb import TMDBClient, TMDBError
 from ..db import get_session
 from ..errors import MishkaHTTPException
@@ -53,6 +53,12 @@ async def _resolve_offer_names(
 ) -> None:
     """Fill provider_name/logo on each item's offers from the cached catalogue.
     Mutates items in place. Best-effort — leaves names null if TMDB unreachable.
+
+    Also re-dedupes by provider now that names are available: pipeline.py's
+    `_availability_boost_map` only dedupes by provider_id (names aren't known
+    yet at that point), which misses the case where a brand's ad-tier has a
+    DIFFERENT provider_id (e.g. "Netflix" vs "Netflix Standard with Ads") —
+    that pattern can only be caught once `provider_name` is filled in.
     """
     tmdb: TMDBClient = request.app.state.tmdb
     region = request.app.state.settings.region
@@ -65,6 +71,7 @@ async def _resolve_offer_names(
             info = catalogue.get(offer.get("provider_id"), {})
             offer["provider_name"] = info.get("name")
             offer["logo"] = TMDBClient.poster_url(info.get("logo_path"), size="small")
+        item["providers"] = dedupe_offers_by_provider(item.get("providers", []))
 
 
 @router.get("/recommendations")

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..availability import needs_refresh, refresh_film_availability
+from ..availability import dedupe_offers_by_provider, needs_refresh, refresh_film_availability
 from ..clients.tmdb import TMDBClient, TMDBError
 from ..models import Availability, Film, Rating, Subscription, Watch
 from .candidates import CandidateGenReport, generate_candidates
@@ -198,6 +198,11 @@ async def _availability_boost_map(
             {"provider_id": provider_id, "kind": kind}
         )
         available.add(film_id)
+    # Same provider can carry more than one kind row for a film (e.g. a
+    # flatrate slot and a separate ad-supported slot) — collapse to one
+    # entry per provider so the `why`/providers payload never lists the same
+    # service twice (see films.py's get_film_availability for the same fix).
+    offers = {film_id: dedupe_offers_by_provider(rows) for film_id, rows in offers.items()}
     return boost, offers, available
 
 

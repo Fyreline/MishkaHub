@@ -14,6 +14,7 @@ a single self-contained unit of work (delete-then-reinsert for one
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
@@ -27,6 +28,58 @@ logger = logging.getLogger(__name__)
 # The kinds a TMDB /movie/{id}/watch/providers region block may carry.
 # Matches the Availability.kind CHECK constraint exactly.
 _KINDS = ("flatrate", "free", "ads", "rent", "buy")
+
+# Lower = better. Used by dedupe_offers_by_provider to pick which row wins
+# when the same provider (or the same real-world brand) appears more than
+# once with differing kinds.
+_KIND_PRIORITY = {"flatrate": 0, "free": 0, "ads": 1}
+
+# TMDB/JustWatch sometimes gives a brand's ad-supported tier its own,
+# DIFFERENT provider_id (e.g. "Netflix" id=8 vs "Netflix Standard with Ads"
+# id=1796; "Amazon Prime Video" id=9 vs "Amazon Prime Video with Ads"
+# id=2100). Stripping this suffix lets both collapse to the same brand key.
+_AD_TIER_SUFFIX_RE = re.compile(
+    r"\s*(free|standard|basic)?\s*with ads\s*$", re.IGNORECASE
+)
+
+
+def _dedupe_key(offer: dict) -> str | int:
+    name = offer.get("provider_name")
+    if name:
+        return _AD_TIER_SUFFIX_RE.sub("", name).strip().casefold()
+    return offer["provider_id"]
+
+
+def dedupe_offers_by_provider(offers: list[dict]) -> list[dict]:
+    """Collapse duplicate rows for the same real-world streaming service.
+
+    Two distinct patterns both surface as "the same service listed twice" in
+    "Where to watch" / recommendation offers, so both are handled here:
+    (1) the same provider_id appearing under more than one `kind` (e.g. a
+    flatrate slot and a separate ad-supported slot for one provider id), and
+    (2) a brand's ad-supported tier having its own, different provider_id
+    (see `_AD_TIER_SUFFIX_RE`). Keeps whichever row has the best kind
+    (flatrate/free over ads) — a `subscribed: True` row wins regardless of
+    kind, since that's the entry that actually matters to the household.
+    Ties keep the first occurrence. Expects each offer dict to have at least
+    "provider_id" and "kind"; "provider_name"/"subscribed" are used when
+    present but not required (falls back to provider_id-only dedup).
+    """
+    best: dict[str | int, dict] = {}
+    for offer in offers:
+        key = _dedupe_key(offer)
+        existing = best.get(key)
+        if existing is None:
+            best[key] = offer
+            continue
+        if existing.get("subscribed") and not offer.get("subscribed"):
+            continue
+        if offer.get("subscribed") and not existing.get("subscribed"):
+            best[key] = offer
+            continue
+        if _KIND_PRIORITY.get(offer["kind"], 99) < _KIND_PRIORITY.get(existing["kind"], 99):
+            best[key] = offer
+    return list(best.values())
 
 # Module-level cache of the provider catalogue, keyed by region, so repeated
 # availability refreshes/serves don't all hit TMDB for the catalogue too.

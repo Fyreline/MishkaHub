@@ -58,8 +58,10 @@ export type FilmSort = 'watched_desc' | 'rating_desc' | 'title' | 'year'
 export interface GetFilmsParams {
   user?: 1 | 2
   seen?: boolean
+  seen_by?: 'both' | 'either'
   rated?: boolean
   liked?: boolean
+  min_rating?: number
   year_from?: number
   year_to?: number
   genre?: string
