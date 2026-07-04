@@ -501,6 +501,9 @@ export const api = {
     }),
   deleteMedia: (fileId: number) =>
     request<{ deleted: number }>(`/api/media/${fileId}`, { method: 'DELETE' }),
+
+  // Coming soon (Phase 8, v1 subset — theatrical release dates only)
+  getUpcoming: (page = 1) => get<UpcomingResponse>(`/api/upcoming${toQuery({ page })}`),
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +538,25 @@ export interface MediaScanResult {
   auto_matched: number
   unmatched: number
   errors: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 — Coming soon (docs/phases/PHASE-8-coming-soon.md, v1 subset)
+// ---------------------------------------------------------------------------
+
+export interface UpcomingItem {
+  id: number
+  title: string | null
+  overview: string | null
+  poster: string | null
+  release_date: string | null
+}
+
+export interface UpcomingResponse {
+  region: string
+  page: number
+  total_pages: number
+  results: UpcomingItem[]
 }
 
 export { ApiError }

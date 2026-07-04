@@ -14,6 +14,7 @@ import { Catalogue, DetailDrawer } from './components/Catalogue'
 import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
 import { OwnedPage } from './components/OwnedPage'
+import { UpcomingPage } from './components/UpcomingPage'
 import {
   FilmHeaderSkeleton,
   MoreLikeThisSection,
@@ -1013,7 +1014,7 @@ function CatMark() {
   )
 }
 
-type View = 'catalogue' | 'owned' | 'settings'
+type View = 'catalogue' | 'owned' | 'upcoming' | 'settings'
 
 export default function App() {
   const [view, setView] = useState<View>('catalogue')
@@ -1056,6 +1057,16 @@ export default function App() {
             >
               Owned
             </button>
+            <button
+              type="button"
+              onClick={() => setView('upcoming')}
+              aria-pressed={view === 'upcoming'}
+              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
+                view === 'upcoming' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+              }`}
+            >
+              Coming soon
+            </button>
           </nav>
           <div className="flex items-center gap-3">
             <StatusPill health={health} error={healthError} />
@@ -1070,6 +1081,8 @@ export default function App() {
           <SettingsPage onBack={() => setView('catalogue')} />
         ) : view === 'owned' ? (
           <OwnedPage />
+        ) : view === 'upcoming' ? (
+          <UpcomingPage />
         ) : (
           <>
             <div className="pb-8 text-center">

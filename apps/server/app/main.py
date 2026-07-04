@@ -31,6 +31,7 @@ from .routers import (
     recommendations,
     settings,
     tmdb,
+    upcoming,
 )
 
 # Ensure INFO-level logs (scheduler start/finish, per-cycle row deltas, etc.)
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(credentials.router, prefix="/api", dependencies=[Depends(require_auth)])
     app.include_router(settings.router, prefix="/api", dependencies=[Depends(require_auth)])
     app.include_router(media.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(upcoming.router, prefix="/api", dependencies=[Depends(require_auth)])
     return app
 
 

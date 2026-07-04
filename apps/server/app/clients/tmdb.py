@@ -147,6 +147,24 @@ class TMDBClient:
             {"language": self._settings.language, "page": page},
         )
 
+    async def upcoming_movies(
+        self, *, region: str | None = None, page: int = 1
+    ) -> dict[str, Any]:
+        """GET /movie/upcoming — theatrical releases coming soon in `region`.
+
+        For the "Coming soon" tab (docs/phases/PHASE-8-coming-soon.md). Kept
+        separate from `discover_movies` above since that method's
+        `with_watch_providers` is mandatory and tied to the household's
+        subscriptions — theatrical "coming soon" isn't a streaming-provider
+        query at all. TMDB doesn't reliably expose *streaming* arrival dates
+        (PLAN.md's Phase 8 note), so this only ever surfaces cinema release
+        dates, not "arriving on Netflix" dates.
+        """
+        return await self._get(
+            "/movie/upcoming",
+            {"region": region or self._settings.region, "language": self._settings.language, "page": page},
+        )
+
     async def watch_providers_catalogue(self, region: str | None = None) -> list[dict[str, Any]]:
         """Full TMDB/JustWatch movie-provider catalogue for a region.
 
