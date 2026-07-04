@@ -972,13 +972,14 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
 /** A small, tasteful cat-ear mark next to the wordmark — not an emoji, part of the brand. */
 function CatMark() {
   return (
-    <svg viewBox="0 0 28 24" aria-hidden className="h-6 w-7 text-clay">
+    <svg viewBox="0 0 32 28" aria-hidden className="h-7 w-8 text-clay">
       <path
-        d="M4 2.5 10 11h8L24 2.5c1 5.5 1.3 9.7-1 13.3C21 19.3 17.7 21.5 14 21.5S7 19.3 5 15.8C2.7 12.2 3 8 4 2.5Z"
+        d="M4,9 L2,1.5 L10,7.5 Q16,4 22,7.5 L30,1.5 L28,9 Q30.5,14.5 28,20 Q24.5,26 16,26 Q7.5,26 4,20 Q1.5,14.5 4,9 Z"
         fill="currentColor"
       />
-      <circle cx="11" cy="15" r="1" fill="var(--color-paper)" />
-      <circle cx="17" cy="15" r="1" fill="var(--color-paper)" />
+      <circle cx="12" cy="16.5" r="1.6" fill="var(--color-paper)" />
+      <circle cx="20" cy="16.5" r="1.6" fill="var(--color-paper)" />
+      <path d="M15,20 L17,20 L16,21.3 Z" fill="var(--color-paper)" />
     </svg>
   )
 }
