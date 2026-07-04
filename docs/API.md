@@ -217,13 +217,13 @@ Query params: `user` (1|2, required — eligibility is per-person), `genre`, `ma
 // 503 {"detail":"No eligible films match these filters","code":"lucky_pool_empty"}
 ```
 
-### Full personalised system (planned — PHASE-3-recommender.md §3-8)
+### Full personalised system (shipped — PHASE-3-recommender.md §3-8)
 
-Query params for `GET /api/recommendations` (once built):
-`profile` (`me` | `partner` | `together`, default `me`), `providers` (CSV of TMDB provider ids to *narrow* below the household set, e.g. `8,337`), `include_unavailable` (bool, default false), `novelty` (0–1, weight override), `genre`, `max_runtime`, `limit`/`offset`.
+Query params for `GET /api/recommendations`:
+`profile` (`me` | `partner` | `together`, default `me`), `providers` (CSV of TMDB provider ids to *narrow* below the household set, e.g. `8,337`), `include_unavailable` (bool, default false), `novelty` (0–1, weight override), `genres` (CSV of genre names, AND-matched — a film must match every listed genre, not just one; case-insensitive substring match against the film's metadata, e.g. `?genres=Comedy,Horror` only returns films that are both), `runtime_buckets` (CSV of `under95`/`95to120`/`121to180`/`over180`, OR-matched — a film with no known runtime matches none of them), `vibe` (single value, same enum as `/similar`: `slow_burn`/`feel_good`/`sad`/`tense`/`dark`/`quick_watch`; 422 `invalid_vibe` on an unknown value), `limit`/`offset`.
 
 ```json
-// GET /api/recommendations?profile=together&limit=2
+// GET /api/recommendations?profile=together&limit=2&genres=Comedy,Horror&runtime_buckets=under95,over180&vibe=feel_good
 { "profile": "together", "model_version": "2026-07-03T02:00Z",
   "generated_at": "2026-07-03T02:05:11Z",
   "attribution": "Streaming availability by JustWatch",

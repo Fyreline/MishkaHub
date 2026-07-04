@@ -107,6 +107,31 @@ export interface FilmAvailability {
   tmdb_watch_page: string
 }
 
+// --- Re-match a wrongly-matched film ("fix the match") -------------------
+
+/** One candidate from `GET /api/films/{id}/rematch/search`. */
+export interface RematchCandidate {
+  id: number
+  title: string
+  year: number | null
+  poster: string | null
+  overview: string | null
+}
+
+export interface RematchSearchResponse {
+  query: string
+  items: RematchCandidate[]
+}
+
+export interface RematchResult {
+  old_film_id: number
+  new_film_id: number
+  new_film: { id: number; title: string; year: number | null; poster: string | null }
+  moved: { watches: number; ratings: number; likes: number; reviews: number }
+  dropped: { ratings: number; likes: number; reviews: number }
+  old_film_deleted: boolean
+}
+
 // --- Similar films -------------------------------------------------------
 
 /** One of the six vibe tags `GET /api/films/{id}/similar` can filter on. */
@@ -159,8 +184,9 @@ export interface RecommendationsResponse {
 export interface GetRecommendationsParams {
   profile?: RecommendationProfile
   limit?: number
-  genre?: string
-  max_runtime?: number
+  genres?: string
+  runtime_buckets?: string
+  vibe?: string
 }
 
 // --- Import & sync -----------------------------------------------------
@@ -374,6 +400,14 @@ export const api = {
     get<SimilarFilmsResponse>(
       `/api/films/${tmdbId}/similar${toQuery({ limit: opts.limit, max_runtime: opts.maxRuntime, vibe: opts.vibe })}`,
     ),
+  searchRematchCandidates: (filmId: number, q: string) =>
+    get<RematchSearchResponse>(`/api/films/${filmId}/rematch/search${toQuery({ q })}`),
+  rematchFilm: (filmId: number, correctTmdbId: number) =>
+    request<RematchResult>(`/api/films/${filmId}/rematch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correct_tmdb_id: correctTmdbId }),
+    }),
   getRecommendations: (params: GetRecommendationsParams = {}) =>
     get<RecommendationsResponse>(`/api/recommendations${toQuery(params)}`),
 

@@ -26,7 +26,8 @@ from ..db import get_session
 from ..errors import MishkaHTTPException
 from ..models import Film, ModelArtifact, Rating, Watch
 from ..recommender.artifacts import active_taste_artifact
-from ..recommender.pipeline import recommend, retrain
+from ..recommender.pipeline import _RUNTIME_BUCKETS, recommend, retrain
+from ..recommender.vibes import ALL_VIBE_TAGS
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,14 @@ def _parse_providers(providers: str | None) -> list[int] | None:
         part = part.strip()
         if part.isdigit():
             out.append(int(part))
+    return out or None
+
+
+def _parse_csv(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    out = [part.strip() for part in value.split(",")]
+    out = [part for part in out if part]
     return out or None
 
 
@@ -81,13 +90,37 @@ async def get_recommendations(
     providers: str | None = Query(default=None, description="CSV of TMDB provider ids to narrow below the household set"),
     include_unavailable: bool = Query(default=False),
     novelty: float | None = Query(default=None, ge=0.0, le=1.0),
-    genre: str | None = Query(default=None),
-    max_runtime: int | None = Query(default=None, ge=1),
+    genres: str | None = Query(default=None, description="CSV of genre names; AND-matched (a film must match every one)"),
+    runtime_buckets: str | None = Query(
+        default=None,
+        description=f"CSV of runtime buckets; OR-matched. One or more of: {', '.join(_RUNTIME_BUCKETS)}",
+    ),
+    vibe: str | None = Query(
+        default=None,
+        description=f"One of: {', '.join(ALL_VIBE_TAGS)}",
+    ),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
 ) -> dict:
     tmdb: TMDBClient = request.app.state.tmdb
+
+    if vibe is not None and vibe not in ALL_VIBE_TAGS:
+        raise MishkaHTTPException(
+            status_code=422,
+            detail=f"Unknown vibe '{vibe}'. Must be one of: {', '.join(ALL_VIBE_TAGS)}",
+            code="invalid_vibe",
+        )
+
+    parsed_buckets = _parse_csv(runtime_buckets)
+    if parsed_buckets is not None:
+        unknown = [b for b in parsed_buckets if b not in _RUNTIME_BUCKETS]
+        if unknown:
+            raise MishkaHTTPException(
+                status_code=422,
+                detail=f"Unknown runtime bucket(s) {unknown}. Must be one of: {', '.join(_RUNTIME_BUCKETS)}",
+                code="invalid_runtime_bucket",
+            )
 
     artifact = active_taste_artifact(session)
     model_version = artifact.version if artifact else "in-process"
@@ -100,8 +133,9 @@ async def get_recommendations(
             offset=offset,
             include_unavailable=include_unavailable,
             novelty=novelty,
-            genre=genre,
-            max_runtime=max_runtime,
+            genres=_parse_csv(genres),
+            runtime_buckets=parsed_buckets,
+            vibe=vibe,
             providers=_parse_providers(providers),
             model_version=model_version,
         )

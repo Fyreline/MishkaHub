@@ -25,6 +25,9 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import json
+from typing import Callable
+
 from ..availability import dedupe_offers_by_provider, needs_refresh, refresh_film_availability
 from ..clients.tmdb import TMDBClient, TMDBError
 from ..models import Availability, Film, Rating, Subscription, Watch
@@ -36,6 +39,7 @@ from .scoring import (
     score_candidates,
 )
 from .taste import CorpusSpace, UserTasteModel, build_corpus_space, fit_user_taste
+from .vibes import vibe_tags
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +215,14 @@ async def _availability_boost_map(
 # --------------------------------------------------------------------------
 _PROFILE_USERS = {"me": [1], "partner": [2], "together": [1, 2]}
 
+# Runtime bucket key -> predicate over a non-None runtime_min.
+_RUNTIME_BUCKETS: dict[str, Callable[[int], bool]] = {
+    "under95": lambda r: r < 95,
+    "95to120": lambda r: 95 <= r <= 120,
+    "121to180": lambda r: 121 <= r <= 180,
+    "over180": lambda r: r > 180,
+}
+
 
 @dataclass
 class RecommendResult:
@@ -230,8 +242,9 @@ async def recommend(
     offset: int = 0,
     include_unavailable: bool = False,
     novelty: float | None = None,
-    genre: str | None = None,
-    max_runtime: int | None = None,
+    genres: list[str] | None = None,
+    runtime_buckets: list[str] | None = None,
+    vibe: str | None = None,
     providers: list[int] | None = None,
     model_version: str = "in-process",
 ) -> RecommendResult:
@@ -250,12 +263,27 @@ async def recommend(
     films_by_id = {f.id: f for f in _all_films(session)}
     candidate_ids = [fid for fid in corpus.film_ids if fid not in ineligible]
 
-    # Request-time narrowing: genre / max_runtime.
+    # Request-time narrowing: genres / runtime_buckets / vibe.
     def _passes_filters(f: Film) -> bool:
-        if max_runtime is not None and (f.runtime_min is None or f.runtime_min > max_runtime):
-            return False
-        if genre and (not f.metadata_json or genre.lower() not in f.metadata_json.lower()):
-            return False
+        if runtime_buckets:
+            if f.runtime_min is None:
+                return False
+            if not any(_RUNTIME_BUCKETS[b](f.runtime_min) for b in runtime_buckets):
+                return False
+        if genres:
+            # AND, not OR: each additional genre narrows the result set (a
+            # film must match every selected genre, not just one) — matches
+            # the household's stated preference, not the more common
+            # "broaden" multi-select convention.
+            if not f.metadata_json:
+                return False
+            meta_lower = f.metadata_json.lower()
+            if not all(g.lower() in meta_lower for g in genres):
+                return False
+        if vibe:
+            meta = json.loads(f.metadata_json) if f.metadata_json else {}
+            if vibe not in vibe_tags(meta, runtime_min=f.runtime_min):
+                return False
         return True
 
     candidate_films = [

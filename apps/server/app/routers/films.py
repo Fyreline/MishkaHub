@@ -15,6 +15,14 @@ GET /api/films/{tmdb_id}/availability  GB streaming-only availability
 GET /api/films/{tmdb_id}/similar       content-similarity recommender v0
                             (docs/phases/PHASE-3-recommender.md §1-2) —
                             auto-hydrates from TMDB if not yet in our library
+GET /api/films/{tmdb_id}/rematch/search   proxy TMDB search for the
+                            "fix the match" UI — candidates to re-point a
+                            wrongly-matched film to.
+POST /api/films/{tmdb_id}/rematch         move all watches/ratings/likes/
+                            reviews off a wrongly-matched film onto the
+                            correct TMDB id, hydrating the destination first.
+                            See _rematch_film's docstring for the full
+                            collision/merge policy.
 """
 from __future__ import annotations
 
@@ -23,6 +31,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -35,8 +44,8 @@ from ..availability import (
 from ..clients.tmdb import TMDBClient, TMDBError
 from ..db import get_session
 from ..errors import MishkaHTTPException
-from ..importers.merge import upsert_film
-from ..models import Availability, Film, Like, Rating, Watch
+from ..importers.merge import upsert_film, upsert_watch
+from ..models import Availability, Film, Like, Rating, Review, UnmatchedImport, Watch
 from ..recommender.features import similar_films
 from ..recommender.lucky import eligible_film_ids_for_user, pick_lucky_film
 from ..recommender.vibes import ALL_VIBE_TAGS, vibe_tags
@@ -532,4 +541,291 @@ async def get_film_availability(
         "attribution": ATTRIBUTION,
         "offers": offers,
         "tmdb_watch_page": f"https://www.themoviedb.org/movie/{tmdb_id}/watch?locale={settings.region}",
+    }
+
+
+# ============================================================================
+# Re-match: fix a Letterboxd import that auto-matched to the wrong TMDB film.
+#
+# tmdb_match.py's scoring auto-accepts a candidate above a score/margin
+# threshold; it is occasionally still wrong (e.g. a same-titled, near-zero-
+# vote unrelated film outscores the intended one). That module's matching
+# logic is intentionally NOT touched here — this is strictly an after-the-
+# fact repair tool for the household to point a film's watch/rating/like/
+# review history at the correct TMDB id once they notice a bad match.
+# ============================================================================
+
+
+@router.get("/{tmdb_id}/rematch/search")
+async def search_rematch_candidates(
+    tmdb_id: int,
+    request: Request,
+    q: str = Query(..., min_length=1, description="Title to search TMDB for"),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Proxy TMDB search for the "fix the match" UI. `tmdb_id` (the film
+    currently believed to be wrong) isn't used to filter results — it's only
+    in the path for symmetry with POST .../rematch and so the endpoint reads
+    naturally as "search for what {tmdb_id} should actually be" — but it IS
+    validated to exist locally, so the UI can't be pointed at a bogus film.
+    """
+    film = session.get(Film, tmdb_id)
+    if film is None:
+        raise MishkaHTTPException(
+            status_code=404,
+            detail=f"Film {tmdb_id} not found",
+            code="not_found",
+        )
+
+    tmdb: TMDBClient = request.app.state.tmdb
+    try:
+        result = await tmdb.search_movie(q)
+    except TMDBError as exc:
+        raise MishkaHTTPException(
+            status_code=502,
+            detail=f"TMDB search failed: {exc}",
+            code="tmdb_error",
+        ) from exc
+
+    candidates = result.get("results") or []
+    items = [
+        {
+            "id": c["id"],
+            "title": c.get("title") or c.get("original_title") or "",
+            "year": (
+                int(c["release_date"][:4])
+                if c.get("release_date") and len(c["release_date"]) >= 4
+                and c["release_date"][:4].isdigit()
+                else None
+            ),
+            "poster": TMDBClient.poster_url(c.get("poster_path")),
+            "overview": c.get("overview"),
+        }
+        for c in candidates[:8]
+    ]
+    return {"query": q, "items": items}
+
+
+class RematchBody(BaseModel):
+    correct_tmdb_id: int
+
+
+def _other_references_exist(session: Session, film_id: int) -> bool:
+    """True if anything besides the four moved tables still points at
+    `film_id` after a rematch — i.e. it is NOT safe to delete the row.
+
+    Checked: watches/ratings/likes/reviews (should always be empty by the
+    time this is called, since _rematch_film moves/drops every row from
+    those four tables first — this is a defensive re-check, not redundant
+    trust), unmatched_imports.matched_film_id, availability,
+    recommendations_cache, feedback_events, media_files. Anything else with
+    a films.id foreign key added later should be added to this list too.
+    """
+    from ..models import FeedbackEvent, MediaFile, RecommendationCache
+
+    checks = [
+        select(Watch.id).where(Watch.film_id == film_id),
+        select(Rating.user_id).where(Rating.film_id == film_id),
+        select(Like.user_id).where(Like.film_id == film_id),
+        select(Review.id).where(Review.film_id == film_id),
+        select(UnmatchedImport.id).where(UnmatchedImport.matched_film_id == film_id),
+        select(Availability.film_id).where(Availability.film_id == film_id),
+        select(RecommendationCache.film_id).where(RecommendationCache.film_id == film_id),
+        select(FeedbackEvent.id).where(FeedbackEvent.film_id == film_id),
+        select(MediaFile.id).where(MediaFile.film_id == film_id),
+    ]
+    for stmt in checks:
+        if session.scalars(stmt.limit(1)).first() is not None:
+            return True
+    return False
+
+
+async def _hydrate_correct_film(
+    correct_tmdb_id: int, request: Request, session: Session
+) -> Film:
+    """Same hydration pattern as _get_or_hydrate_film above (GET
+    /films/{tmdb_id} / /similar): look up locally first, else fetch
+    credits/keywords/release_dates from TMDB and upsert via the shared
+    importers/merge.py logic. Duplicated rather than reusing
+    _get_or_hydrate_film directly only because that helper doesn't commit at
+    a point compatible with wrapping the whole rematch in one transaction —
+    the upsert itself (upsert_film) is the exact same call.
+    """
+    film = session.get(Film, correct_tmdb_id)
+    if film is not None:
+        return film
+
+    tmdb: TMDBClient = request.app.state.tmdb
+    try:
+        payload = await tmdb.movie(correct_tmdb_id, append="credits,keywords,release_dates")
+    except TMDBError as exc:
+        raise MishkaHTTPException(
+            status_code=404,
+            detail=f"TMDB lookup for {correct_tmdb_id} failed: {exc}",
+            code="not_found",
+        ) from exc
+
+    return upsert_film(session, payload)
+
+
+@router.post("/{tmdb_id}/rematch")
+async def rematch_film(
+    tmdb_id: int,
+    body: RematchBody,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Move every watches/ratings/likes/reviews row off `tmdb_id` (the wrong
+    film) onto `body.correct_tmdb_id` (the right one), then delete the wrong
+    film's row if nothing else references it.
+
+    Collision / merge policy (both films can independently already have
+    activity for the same user — e.g. one row landed on the wrong match via
+    a CSV import, another correct row already exists on the right film via a
+    later RSS import of the same diary entry):
+
+    - watches: re-inserted via importers/merge.py's `upsert_watch`, the SAME
+      dedup path every import uses (dedup by letterboxd_guid, then by exact
+      (user, film, date), then dateless-upgrades-to-dated) — never a raw
+      UPDATE of film_id, so this can't reintroduce the duplicate-watch bug
+      the dedup rules in merge.py exist to prevent. The old watch row is
+      deleted once its content has been merged in.
+    - ratings / likes (PK is (user_id, film_id), so a straight re-point
+      would collide if the destination already has a row for that user):
+      if the destination has NO existing row for that user, the source row
+      is re-pointed (moved) as-is. If the destination ALREADY has a row for
+      that user, the destination's existing row wins and the source row is
+      dropped — the destination is treated as the more-trustworthy state
+      (typically the correctly-matched film that was ALSO reached
+      independently, e.g. via RSS/scrape, and is therefore corroborated by a
+      second source) rather than attempting a field-by-field "most recent"
+      merge, which risks silently overwriting a real edit with stale
+      Letterboxd data. This is a conservative, documented choice, not an
+      oversight.
+    - reviews (no unique constraint — insert-or-skip by
+      (user_id, film_id, watched_date) + exact text equality is merge.py's
+      existing convention): if the destination already has a row with
+      identical (user, watched_date, text), the source row is dropped as a
+      pure duplicate; otherwise the source row is re-pointed (review history
+      is kept rather than merged/collapsed, since two differently-worded
+      reviews for the same (user, film) are legitimate history, same as
+      upsert_review's own "changed text -> new row" rule).
+
+    Wrapped in one transaction: on any failure, session.rollback() undoes
+    every partial move so nothing is left half-migrated.
+    """
+    if tmdb_id == body.correct_tmdb_id:
+        raise MishkaHTTPException(
+            status_code=422,
+            detail="correct_tmdb_id is the same as the current film — nothing to rematch",
+            code="noop_rematch",
+        )
+
+    wrong_film = session.get(Film, tmdb_id)
+    if wrong_film is None:
+        raise MishkaHTTPException(
+            status_code=404,
+            detail=f"Film {tmdb_id} not found",
+            code="not_found",
+        )
+
+    try:
+        correct_film = await _hydrate_correct_film(body.correct_tmdb_id, request, session)
+
+        moved = {"watches": 0, "ratings": 0, "likes": 0, "reviews": 0}
+        dropped = {"ratings": 0, "likes": 0, "reviews": 0}
+
+        # --- watches: re-point via the shared dedup path, not a raw UPDATE ---
+        old_watches = session.scalars(
+            select(Watch).where(Watch.film_id == tmdb_id)
+        ).all()
+        for w in old_watches:
+            tags = json.loads(w.tags_json) if w.tags_json else None
+            upsert_watch(
+                session,
+                w.user_id,
+                body.correct_tmdb_id,
+                watched_date=w.watched_date,
+                rewatch=bool(w.rewatch),
+                tags=tags,
+                source=w.source,
+                letterboxd_guid=w.letterboxd_guid,
+                letterboxd_uri=w.letterboxd_uri,
+            )
+            session.delete(w)
+            moved["watches"] += 1
+        session.flush()
+
+        # --- ratings: PK collision -> destination wins, source dropped ---
+        old_ratings = session.scalars(
+            select(Rating).where(Rating.film_id == tmdb_id)
+        ).all()
+        for r in old_ratings:
+            existing = session.get(Rating, (r.user_id, body.correct_tmdb_id))
+            if existing is not None:
+                session.delete(r)
+                dropped["ratings"] += 1
+            else:
+                r.film_id = body.correct_tmdb_id
+                moved["ratings"] += 1
+        session.flush()
+
+        # --- likes: PK collision -> destination wins, source dropped ---
+        old_likes = session.scalars(
+            select(Like).where(Like.film_id == tmdb_id)
+        ).all()
+        for like in old_likes:
+            existing = session.get(Like, (like.user_id, body.correct_tmdb_id))
+            if existing is not None:
+                session.delete(like)
+                dropped["likes"] += 1
+            else:
+                like.film_id = body.correct_tmdb_id
+                moved["likes"] += 1
+        session.flush()
+
+        # --- reviews: dup-by-exact-text dropped, else re-pointed (history kept) ---
+        old_reviews = session.scalars(
+            select(Review).where(Review.film_id == tmdb_id)
+        ).all()
+        for review in old_reviews:
+            dup = session.scalars(
+                select(Review).where(
+                    Review.user_id == review.user_id,
+                    Review.film_id == body.correct_tmdb_id,
+                    Review.watched_date == review.watched_date,
+                    Review.review_text == review.review_text,
+                )
+            ).first()
+            if dup is not None:
+                session.delete(review)
+                dropped["reviews"] += 1
+            else:
+                review.film_id = body.correct_tmdb_id
+                moved["reviews"] += 1
+        session.flush()
+
+        # --- orphan cleanup: only delete the wrong film if truly unreferenced ---
+        deleted_film = False
+        if not _other_references_exist(session, tmdb_id):
+            session.delete(wrong_film)
+            deleted_film = True
+
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return {
+        "old_film_id": tmdb_id,
+        "new_film_id": body.correct_tmdb_id,
+        "new_film": {
+            "id": correct_film.id,
+            "title": correct_film.title,
+            "year": correct_film.release_year,
+            "poster": TMDBClient.poster_url(correct_film.poster_path),
+        },
+        "moved": moved,
+        "dropped": dropped,
+        "old_film_deleted": deleted_film,
     }

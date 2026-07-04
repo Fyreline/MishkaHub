@@ -2,16 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   api,
   ApiError,
-  type FilmAvailability,
-  type FilmDetail,
   type FilmSort,
   type FilmSummary,
   type GetFilmsParams,
   type ImportJob,
-  type SimilarFilm,
   type UnmatchedImport,
 } from '../api'
 import { MovieCard, type CatalogueBadgeInfo } from './MovieCard'
+import { MoreLikeThisSection, UserRatingColumns, WhereToWatchSection } from './FilmDetailSections'
+import { sourceLabel, useFilmDetail } from '../useFilmDetail'
 
 const PAGE_SIZE = 60
 const DECADES = [1980, 1990, 2000, 2010, 2020] as const
@@ -62,111 +61,6 @@ function toBadges(film: FilmSummary, requestedUserId: 1 | 2): CatalogueBadgeInfo
       luminal: luminal.watch_count > 0,
       garfield: garfield.watch_count > 0,
     },
-  }
-}
-
-const STAR_POSITIONS = [1, 2, 3, 4, 5] as const
-
-/** Classic 5-star, half-star hover widget (Letterboxd/IMDb-style) for the
- * editing user's rating — matching DESIGN.md's `★ 4.5` rating-badge
- * convention. Five star icons total; each is split into a left half (sets
- * position - 0.5) and right half (sets the full position), with a live hover
- * preview that fills stars up to the hovered half-position and reverts on
- * pointer-leave. Always rendered, even when unrated (all-empty, still fully
- * clickable), plus a "clear" affordance when a rating exists. */
-function StarRatingInput({
-  value,
-  busy,
-  onSet,
-  onClear,
-}: {
-  value: number | null
-  busy: boolean
-  onSet: (rating: number) => void
-  onClear: () => void
-}) {
-  const [hover, setHover] = useState<number | null>(null)
-  const display = hover ?? value ?? 0
-
-  function halfFromEvent(e: React.MouseEvent<HTMLButtonElement>, star: number): number {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const isLeftHalf = e.clientX - rect.left < rect.width / 2
-    return isLeftHalf ? star - 0.5 : star
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <div
-        className="flex items-center"
-        role="radiogroup"
-        aria-label="Your rating"
-        onMouseLeave={() => setHover(null)}
-      >
-        {STAR_POSITIONS.map((star) => {
-          const fill =
-            display >= star ? 'full' : display >= star - 0.5 ? 'half' : 'empty'
-          return (
-            <button
-              key={star}
-              type="button"
-              role="radio"
-              aria-checked={value === star || value === star - 0.5}
-              disabled={busy}
-              title={`${star} stars`}
-              onMouseMove={(e) => setHover(halfFromEvent(e, star))}
-              onClick={(e) => onSet(halfFromEvent(e, star))}
-              className={`flex h-11 w-8 items-center justify-center leading-none transition disabled:opacity-50 sm:h-6 sm:w-5 ${
-                fill === 'empty' ? 'text-line-strong hover:text-kraft' : 'text-clay'
-              }`}
-            >
-              {/* Inner wrapper sized to the glyph itself — the outer button
-                  provides the larger tap target (44px on mobile) while this
-                  stays glyph-sized so the half/full clip overlay still lines
-                  up exactly on top of the outline star. */}
-              <span className="relative inline-block text-lg">
-                {/* Empty outline star as the base layer. */}
-                <span aria-hidden>☆</span>
-                {/* Filled star clipped to show a half or full overlay. */}
-                {fill !== 'empty' && (
-                  <span
-                    aria-hidden
-                    className="absolute inset-0 overflow-hidden"
-                    style={{ width: fill === 'half' ? '50%' : '100%' }}
-                  >
-                    ★
-                  </span>
-                )}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      {value != null && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onClear}
-          className="min-h-11 px-1 text-[11px] text-ink-soft underline decoration-dotted transition hover:text-ink disabled:opacity-50 sm:min-h-0"
-        >
-          clear
-        </button>
-      )}
-    </div>
-  )
-}
-
-function sourceLabel(source: FilmDetail['source']): string {
-  switch (source) {
-    case 'letterboxd-import':
-      return 'Imported from Letterboxd export'
-    case 'letterboxd-scrape':
-      return 'Read from public Letterboxd profile'
-    case 'letterboxd-rss':
-      return 'Synced via Letterboxd RSS'
-    case 'in-app':
-      return 'Added in app'
-    default:
-      return 'Unknown provenance'
   }
 }
 
@@ -404,18 +298,6 @@ function FilterBar({
 // Detail drawer
 // ---------------------------------------------------------------------------
 
-type UserKey = 'my' | 'partner'
-
-/** `my` is always user 1 (Luminal/Meowck), `partner` always user 2
- * (Garfield/Meowmy) for the detail endpoint — a fixed mapping, unlike the
- * list endpoint where `my`/`partner` swap with whichever `user` was
- * requested. Both people can rate/like/mark-watched here regardless of
- * which filter is active elsewhere in the app — there's no real per-device
- * "signed in as" concept, so editing isn't restricted to one side. */
-function userIdForKey(key: UserKey): 1 | 2 {
-  return key === 'my' ? 1 : 2
-}
-
 function DetailDrawer({
   filmId,
   onClose,
@@ -425,14 +307,35 @@ function DetailDrawer({
   onClose: () => void
   onNavigate: (id: number) => void
 }) {
-  const [detail, setDetail] = useState<FilmDetail | null>(null)
-  const [availability, setAvailability] = useState<FilmAvailability | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const [similar, setSimilar] = useState<SimilarFilm[]>([])
-  const [similarError, setSimilarError] = useState<string | null>(null)
-  const [similarLoading, setSimilarLoading] = useState(true)
+  const {
+    detail,
+    availability,
+    error,
+    loading,
+    similar,
+    similarError,
+    similarLoading,
+    ratingBusy,
+    ratingError,
+    likedBusy,
+    likedError,
+    seenBusy,
+    seenError,
+    rematchOpen,
+    setRematchOpen,
+    rematchQuery,
+    setRematchQuery,
+    rematchResults,
+    rematchSearching,
+    rematchError,
+    rematchApplyingId,
+    handleSetRating,
+    handleClearRating,
+    handleToggleLiked,
+    handleMarkSeen,
+    handleRematchSearch,
+    handleRematchPick,
+  } = useFilmDetail(filmId, onNavigate)
 
   // Progressive scroll-blur on the sticky header: 0 at the top, ramping to 1
   // over MAX_BLUR_SCROLL px, then capped (a "little bit" of scroll per spec).
@@ -453,146 +356,6 @@ function DetailDrawer({
       document.body.style.overflow = previousOverflow
     }
   }, [])
-
-  // Editing state, tracked PER USER so editing one person's rating/liked/seen
-  // never disables or interferes with the other's controls.
-  const [ratingBusy, setRatingBusy] = useState<Record<UserKey, boolean>>({ my: false, partner: false })
-  const [ratingError, setRatingError] = useState<Record<UserKey, string | null>>({ my: null, partner: null })
-  const [likedBusy, setLikedBusy] = useState<Record<UserKey, boolean>>({ my: false, partner: false })
-  const [likedError, setLikedError] = useState<Record<UserKey, string | null>>({ my: null, partner: null })
-  const [seenBusy, setSeenBusy] = useState<Record<UserKey, boolean>>({ my: false, partner: false })
-  const [seenError, setSeenError] = useState<Record<UserKey, string | null>>({ my: null, partner: null })
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setDetail(null)
-    setAvailability(null)
-    Promise.all([api.getFilm(filmId), api.getFilmAvailability(filmId)])
-      .then(([d, a]) => {
-        if (cancelled) return
-        setDetail(d)
-        setAvailability(a)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [filmId])
-
-  useEffect(() => {
-    let cancelled = false
-    setSimilarLoading(true)
-    setSimilarError(null)
-    setSimilar([])
-    api
-      .getSimilarFilms(filmId, { limit: 8 })
-      .then((res) => {
-        if (cancelled) return
-        setSimilar(res.items)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setSimilarError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setSimilarLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [filmId])
-
-  async function handleSetRating(key: UserKey, rating: number) {
-    if (!detail) return
-    const userId = userIdForKey(key)
-    setRatingBusy((prev) => ({ ...prev, [key]: true }))
-    setRatingError((prev) => ({ ...prev, [key]: null }))
-    try {
-      const res = await api.setRating(detail.id, rating, userId)
-      setDetail((prev) =>
-        prev
-          ? {
-              ...prev,
-              [key]: {
-                ...prev[key],
-                rating: res.rating,
-                letterboxd_rating: res.letterboxd_rating,
-              },
-            }
-          : prev,
-      )
-    } catch (err) {
-      setRatingError((prev) => ({ ...prev, [key]: err instanceof ApiError ? err.message : String(err) }))
-    } finally {
-      setRatingBusy((prev) => ({ ...prev, [key]: false }))
-    }
-  }
-
-  async function handleClearRating(key: UserKey) {
-    if (!detail) return
-    const userId = userIdForKey(key)
-    setRatingBusy((prev) => ({ ...prev, [key]: true }))
-    setRatingError((prev) => ({ ...prev, [key]: null }))
-    try {
-      await api.deleteRating(detail.id, userId)
-      setDetail((prev) => (prev ? { ...prev, [key]: { ...prev[key], rating: null } } : prev))
-    } catch (err) {
-      setRatingError((prev) => ({ ...prev, [key]: err instanceof ApiError ? err.message : String(err) }))
-    } finally {
-      setRatingBusy((prev) => ({ ...prev, [key]: false }))
-    }
-  }
-
-  async function handleToggleLiked(key: UserKey) {
-    if (!detail) return
-    const userId = userIdForKey(key)
-    const nextLiked = !detail[key].liked
-    setLikedBusy((prev) => ({ ...prev, [key]: true }))
-    setLikedError((prev) => ({ ...prev, [key]: null }))
-    try {
-      const res = await api.setLiked(detail.id, nextLiked, userId)
-      setDetail((prev) => (prev ? { ...prev, [key]: { ...prev[key], liked: res.liked } } : prev))
-    } catch (err) {
-      setLikedError((prev) => ({ ...prev, [key]: err instanceof ApiError ? err.message : String(err) }))
-    } finally {
-      setLikedBusy((prev) => ({ ...prev, [key]: false }))
-    }
-  }
-
-  async function handleMarkSeen(key: UserKey) {
-    if (!detail) return
-    const userId = userIdForKey(key)
-    setSeenBusy((prev) => ({ ...prev, [key]: true }))
-    setSeenError((prev) => ({ ...prev, [key]: null }))
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      const res = await api.markSeen(detail.id, userId, today, false)
-      setDetail((prev) =>
-        prev
-          ? {
-              ...prev,
-              [key]: {
-                ...prev[key],
-                watch_count: prev[key].watch_count + 1,
-                last_watched: res.watched_date,
-              },
-            }
-          : prev,
-      )
-    } catch (err) {
-      setSeenError((prev) => ({ ...prev, [key]: err instanceof ApiError ? err.message : String(err) }))
-    } finally {
-      setSeenBusy((prev) => ({ ...prev, [key]: false }))
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-30">
@@ -656,7 +419,69 @@ function DetailDrawer({
                   {detail.year ?? '—'}
                   {detail.runtime_min ? ` · ${detail.runtime_min} min` : ''}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setRematchOpen((v) => !v)}
+                  className="mt-1 text-[11px] text-cloud underline decoration-dotted underline-offset-2 transition hover:text-ink-soft"
+                >
+                  Wrong film?
+                </button>
               </div>
+
+              {rematchOpen && (
+                <div className="rounded-md border border-line-strong bg-paper-mid p-3">
+                  <p className="text-[11px] text-ink-soft">
+                    Search TMDB for the film this should actually be, then pick it to move all
+                    watch/rating/like/review history over.
+                  </p>
+                  <form onSubmit={handleRematchSearch} className="mt-2 flex gap-1.5">
+                    <input
+                      type="text"
+                      value={rematchQuery}
+                      onChange={(e) => setRematchQuery(e.target.value)}
+                      placeholder="Search by title…"
+                      className="min-w-0 flex-1 rounded-md border border-line-strong bg-white dark:bg-paper px-2 py-1.5 text-sm text-ink placeholder:text-cloud"
+                    />
+                    <button
+                      type="submit"
+                      disabled={rematchSearching || !rematchQuery.trim()}
+                      className="min-h-11 rounded-md border border-line-strong bg-white dark:bg-paper-mid px-2.5 py-1 text-[11px] font-medium text-ink-mid transition hover:bg-oat disabled:opacity-50 sm:min-h-0"
+                    >
+                      {rematchSearching ? 'Searching…' : 'Search'}
+                    </button>
+                  </form>
+
+                  {rematchError && <p className="mt-1.5 text-[11px] text-fig">{rematchError}</p>}
+
+                  {rematchResults.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {rematchResults.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            disabled={rematchApplyingId !== null}
+                            onClick={() => handleRematchPick(c.id)}
+                            className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-oat disabled:opacity-50"
+                          >
+                            <div className="h-12 w-8 shrink-0 overflow-hidden rounded-sm bg-paper-deep">
+                              {c.poster && (
+                                <img src={c.poster} alt="" className="h-full w-full object-cover" />
+                              )}
+                            </div>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm text-ink-mid">{c.title}</span>
+                              <span className="block text-[11px] text-cloud">{c.year ?? '—'}</span>
+                            </span>
+                            {rematchApplyingId === c.id && (
+                              <span className="shrink-0 text-[11px] text-ink-soft">Applying…</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {detail.source && (
                 <span className="inline-flex w-fit items-center rounded-full bg-oat px-2.5 py-1 font-mono text-[11px] text-ink-mid">
@@ -676,157 +501,28 @@ function DetailDrawer({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3 border-t border-line pt-4">
-                {(['my', 'partner'] as const).map((key) => {
-                  const state = detail[key]
-                  const label = key === 'my' ? 'Luminal' : 'Garfield'
-                  const labelColor = key === 'my' ? 'text-clay' : 'text-sky'
-                  const showLetterboxdShadow =
-                    state.letterboxd_rating != null && state.letterboxd_rating !== state.rating
+              <UserRatingColumns
+                detail={detail}
+                ratingBusy={ratingBusy}
+                ratingError={ratingError}
+                likedBusy={likedBusy}
+                likedError={likedError}
+                seenBusy={seenBusy}
+                seenError={seenError}
+                onSetRating={handleSetRating}
+                onClearRating={handleClearRating}
+                onToggleLiked={handleToggleLiked}
+                onMarkSeen={handleMarkSeen}
+              />
 
-                  return (
-                    <div key={key}>
-                      <div className={`text-[11px] font-medium uppercase tracking-wide ${labelColor}`}>
-                        {label}
-                      </div>
+              <WhereToWatchSection availability={availability} />
 
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <StarRatingInput
-                          value={state.rating}
-                          busy={ratingBusy[key]}
-                          onSet={(rating) => handleSetRating(key, rating)}
-                          onClear={() => handleClearRating(key)}
-                        />
-                        {showLetterboxdShadow && (
-                          <span className="text-[11px] text-cloud">
-                            Letterboxd: ★{state.letterboxd_rating!.toFixed(1)}
-                          </span>
-                        )}
-                      </div>
-                      {ratingError[key] && (
-                        <p className="mt-0.5 text-[11px] text-fig">{ratingError[key]}</p>
-                      )}
-
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft">
-                        <button
-                          type="button"
-                          disabled={likedBusy[key]}
-                          onClick={() => handleToggleLiked(key)}
-                          aria-pressed={state.liked}
-                          className={`-ml-1.5 flex min-h-11 items-center px-1.5 transition disabled:opacity-50 sm:min-h-0 ${
-                            state.liked ? 'text-fig' : 'text-ink-soft hover:text-fig'
-                          }`}
-                        >
-                          {state.liked ? '♥ Liked' : '♡ Like'}
-                        </button>
-                        {state.watch_count > 0 && <span aria-hidden>·</span>}
-                        <span>
-                          {state.watch_count > 0 ? `Watched ${state.watch_count}×` : 'Not watched'}
-                        </span>
-                      </div>
-                      {likedError[key] && (
-                        <p className="mt-0.5 text-[11px] text-fig">{likedError[key]}</p>
-                      )}
-
-                      {state.last_watched && (
-                        <div className="text-xs text-cloud">Last: {state.last_watched}</div>
-                      )}
-
-                      {state.watch_count === 0 && (
-                        <div className="mt-1.5">
-                          <button
-                            type="button"
-                            disabled={seenBusy[key]}
-                            onClick={() => handleMarkSeen(key)}
-                            className="min-h-11 rounded-md border border-line-strong bg-white dark:bg-paper-mid px-2 py-1 text-[11px] font-medium text-ink-mid transition hover:bg-oat disabled:opacity-50 sm:min-h-0"
-                          >
-                            {seenBusy[key] ? 'Marking…' : 'Mark as watched'}
-                          </button>
-                          {seenError[key] && <p className="mt-0.5 text-[11px] text-fig">{seenError[key]}</p>}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="border-t border-line pt-4">
-                <h4 className="text-sm font-medium text-ink">Where to watch</h4>
-                {(() => {
-                  // Streaming only — never show rent/buy listings here (a
-                  // proper backend-side fix is planned; this client-side
-                  // filter keeps the UI honest in the meantime).
-                  const streamingOffers =
-                    availability?.offers.filter((o) => o.kind === 'flatrate' || o.kind === 'free' || o.kind === 'ads') ?? []
-                  return streamingOffers.length > 0 ? (
-                    <ul className="mt-2 space-y-1.5">
-                      {streamingOffers.map((o) => (
-                        <li
-                          key={`${o.provider_id}-${o.kind}`}
-                          className="flex items-center justify-between rounded-md bg-paper-mid px-3 py-2 text-sm"
-                        >
-                          <span className="text-ink-mid">{o.provider_name}</span>
-                          <span className="font-mono text-[11px] uppercase text-ink-soft">{o.kind}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-ink-soft">Not streaming anywhere you have right now.</p>
-                  )
-                })()}
-                <p className="mt-2 font-mono text-[11px] text-cloud">Streaming availability by JustWatch</p>
-              </div>
-
-              <div className="border-t border-line pt-4">
-                <h4 className="text-sm font-medium text-ink">More like this</h4>
-
-                {similarLoading && (
-                  <div className="mt-2 grid grid-cols-4 gap-2">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="aspect-2/3 animate-pulse rounded-sm bg-paper-deep" />
-                    ))}
-                  </div>
-                )}
-
-                {similarError && !similarLoading && (
-                  <p className="mt-2 text-sm text-ink-soft">Nothing here yet — {similarError}</p>
-                )}
-
-                {!similarLoading && !similarError && similar.length === 0 && (
-                  <p className="mt-2 text-sm text-ink-soft">Nothing here yet.</p>
-                )}
-
-                {!similarLoading && similar.length > 0 && (
-                  <div className="mt-2 grid grid-cols-4 gap-2">
-                    {similar.map((s) => (
-                      <button
-                        key={s.film.id}
-                        type="button"
-                        onClick={() => onNavigate(s.film.id)}
-                        className="group text-left"
-                      >
-                        <div className="aspect-2/3 w-full overflow-hidden rounded-sm bg-paper-mid">
-                          {s.film.poster ? (
-                            <img
-                              src={s.film.poster}
-                              alt={s.film.title}
-                              loading="lazy"
-                              className="h-full w-full object-cover transition duration-150 ease-out group-hover:scale-[1.03]"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center p-1 text-center text-[10px] text-ink-soft">
-                              {s.film.title}
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-1 line-clamp-2 text-[11px] leading-tight text-ink-mid">
-                          {s.film.title}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <MoreLikeThisSection
+                similar={similar}
+                similarLoading={similarLoading}
+                similarError={similarError}
+                onNavigate={onNavigate}
+              />
             </div>
           </div>
         )}
