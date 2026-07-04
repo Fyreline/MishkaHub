@@ -426,25 +426,45 @@ function FilterPill({
 // to a shoulder hump, then a tighter, steeper curve to a sharp point at the
 // peak (mirrored on the right) — the shape an actual "{" has (two curves
 // plus a distinct central tooth), not a single smooth arc.
+// Coordinates below match a hand-tuned reference the household provided
+// (devtools-edited to get the feel right, then generalized here so it works
+// for any peak position, not just the one x=43.75 example): ends drop
+// straight down into the panel, a rounded corner (duplicate control point —
+// the standard bezier trick for an L-shaped rounded turn) into a flat
+// shoulder, then a tighter curve up to a sharp point at the peak.
+const BRACE_BOTTOM = 35
+const BRACE_SHOULDER = 10
+const BRACE_PEAK_Y = 1
+const BRACE_EDGE = 5 // inset from each side where the corner completes
+const BRACE_PEAK_OFFSET = 3.75 // x-distance from the peak where the "steep" control point sits
+const BRACE_SHOULDER_RATIO = 0.516 // how far along the shoulder span the gentler control point sits
+
 function bracePath(peakPercent: number): string {
-  const p = Math.max(4, Math.min(96, peakPercent))
-  const rightSpan = 100 - p
-  const leftShoulderX = p * 0.42
-  const rightShoulderX = p + rightSpan * 0.58
+  const p = Math.max(BRACE_EDGE + BRACE_PEAK_OFFSET + 2, Math.min(100 - BRACE_EDGE - BRACE_PEAK_OFFSET - 2, peakPercent))
+  const leftSpan = p - BRACE_PEAK_OFFSET - BRACE_EDGE
+  const rightSpan = 100 - BRACE_EDGE - (p + BRACE_PEAK_OFFSET)
+  const leftCtrl1 = BRACE_EDGE + leftSpan * BRACE_SHOULDER_RATIO
+  const leftCtrl2 = p - BRACE_PEAK_OFFSET
+  const rightCtrl1 = p + BRACE_PEAK_OFFSET
+  const rightCtrl2 = 100 - BRACE_EDGE - rightSpan * BRACE_SHOULDER_RATIO
   return [
-    `M0,19`,
-    `C${p * 0.15},19 ${p * 0.25},8 ${leftShoulderX},7`,
-    `C${p * 0.58},6 ${p * 0.85},1.5 ${p},0`,
-    `C${p + rightSpan * 0.15},1.5 ${p + rightSpan * 0.42},6 ${rightShoulderX},7`,
-    `C${p + rightSpan * 0.75},8 ${p + rightSpan * 0.85},19 100,19`,
+    `M0,${BRACE_BOTTOM}`,
+    `C0,${BRACE_SHOULDER} 0,${BRACE_SHOULDER} ${BRACE_EDGE},${BRACE_SHOULDER}`,
+    `C${leftCtrl1},${BRACE_SHOULDER} ${leftCtrl2},${BRACE_SHOULDER} ${p},${BRACE_PEAK_Y}`,
+    `C${rightCtrl1},${BRACE_SHOULDER} ${rightCtrl2},${BRACE_SHOULDER} ${100 - BRACE_EDGE},${BRACE_SHOULDER}`,
+    `C100,${BRACE_SHOULDER} 100,${BRACE_SHOULDER} 100,${BRACE_BOTTOM}`,
   ].join(' ')
 }
 
-/** Links the expansion panel back to the poster it came from — edges dip
- * down into the panel, a shoulder hump, then a sharp point at the peak
- * (see bracePath). The peak position is spring-animated (not snapped) so
- * switching between recommendation cards slides the whole shape smoothly
- * to the new one instead of jumping. */
+/** Links the expansion panel back to the poster it came from — edges drop
+ * straight down into the panel, a rounded corner, a shoulder, then a sharp
+ * point at the peak (see bracePath). The peak position is spring-animated
+ * (not snapped) so switching between recommendation cards slides the whole
+ * shape smoothly to the new one instead of jumping. Explicit
+ * `overflow: visible` + a taller viewBox than the old version — the
+ * previous shape's ends sat right at the SVG's own bounding-box edge and
+ * got clipped there (the household mistook it for the panel's rounded
+ * corners doing the clipping; it was the connector's own SVG box). */
 function BraceConnector({ peakPercent }: { peakPercent: number }) {
   const spring = useSpring(peakPercent, { stiffness: 260, damping: 32 })
   useEffect(() => {
@@ -453,10 +473,11 @@ function BraceConnector({ peakPercent }: { peakPercent: number }) {
   const d = useTransform(spring, bracePath)
   return (
     <svg
-      viewBox="0 0 100 20"
+      viewBox={`0 0 100 ${BRACE_BOTTOM}`}
       preserveAspectRatio="none"
       aria-hidden
-      className="pointer-events-none mt-1 h-5 w-full text-clay/60"
+      style={{ overflow: 'visible' }}
+      className="pointer-events-none h-9 w-full text-clay/60"
     >
       <motion.path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
@@ -551,36 +572,47 @@ function RecommendationExpansionPanel({
               <img src={detail.backdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
             )}
             {detail.backdrop && (
-              // Two stacked layers, not one: a UNIFORM wash across the whole
-              // image (first layer, painted on top) guarantees baseline
-              // contrast everywhere — including under the title text at the
-              // very left edge, which the gradient alone doesn't reach —
-              // plus the left-to-right gradient (second layer) still ramps
-              // up to fully solid further right, behind the synopsis. Both
-              // tied to --color-paper-mid, which is dark in dark mode and
-              // light in light mode, so this darkens/lightens the image
-              // correctly per theme without touching any text color.
+              // A lighter touch than the first pass: a subtle uniform wash
+              // (first layer) for baseline contrast everywhere, a gentler
+              // gradient (second layer) toward the synopsis side — both
+              // still tied to --color-paper-mid so they darken in dark mode
+              // and lighten in light mode automatically. The real legibility
+              // guarantee is the text-shadow glow below (same idea, applied
+              // per-glyph instead of as a wash), so the wash itself can stay
+              // light enough that the frame is still actually visible.
               <div
                 className="absolute inset-0"
                 aria-hidden
                 style={{
                   background: [
-                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 55%, transparent) 0%, var(--color-paper-mid) 42%)',
-                    'color-mix(in srgb, var(--color-paper-mid) 40%, transparent)',
+                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 30%, transparent) 0%, var(--color-paper-mid) 30%)',
+                    'color-mix(in srgb, var(--color-paper-mid) 18%, transparent)',
                   ].join(', '),
                 }}
               />
             )}
-            <div className="relative p-4 pr-12 sm:p-6 sm:pr-14">
+            <div
+              className="relative p-4 pr-12 sm:p-6 sm:pr-14"
+              style={{
+                // Soft glow in the panel's own background color behind every
+                // glyph — reads as a gentle halo, not a wash, and (unlike the
+                // background layers above) guarantees contrast right at each
+                // letter regardless of what the frame looks like underneath.
+                // No text color changes; --color-paper-mid already flips
+                // between a light and dark tone per theme.
+                textShadow:
+                  '0 0 6px var(--color-paper-mid), 0 0 6px var(--color-paper-mid), 0 0 14px var(--color-paper-mid)',
+              }}
+            >
               <h3 className="font-serif text-xl text-ink">{detail.title}</h3>
-              <p className="mt-0.5 text-xs text-ink-soft">
+              <p className="mt-0.5 text-xs text-ink-mid">
                 {detail.year ?? '—'}
                 {detail.runtime_min ? ` · ${detail.runtime_min} min` : ''}
               </p>
               <button
                 type="button"
                 onClick={() => setRematchOpen((v) => !v)}
-                className="mt-1 text-[11px] text-cloud underline decoration-dotted underline-offset-2 transition hover:text-ink-soft"
+                className="mt-1 text-[11px] text-ink-soft underline decoration-dotted underline-offset-2 transition hover:text-ink"
               >
                 Wrong film?
               </button>
@@ -643,7 +675,15 @@ function RecommendationExpansionPanel({
               {detail.genres.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {detail.genres.map((g) => (
-                    <span key={g} className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-ink-soft">
+                    // Solid chip, not just an outline — sits over the
+                    // backdrop image, so it needs its own real background
+                    // (paper-mid, theme-aware) rather than relying on
+                    // whatever happens to be behind a transparent pill.
+                    <span
+                      key={g}
+                      className="rounded-full bg-paper-mid px-2 py-0.5 text-[11px] text-ink-mid shadow-sm"
+                      style={{ textShadow: 'none' }}
+                    >
                       {g}
                     </span>
                   ))}
