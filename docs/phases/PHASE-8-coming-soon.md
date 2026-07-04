@@ -2,7 +2,13 @@
 
 Purpose: surface films that will soon be *added to* the household's UK streaming services ("Heat hits Netflix UK on the 14th") and, ideally, near-future digital release dates for watchlisted films. This is a stretch goal because — as locked in [PLAN.md](../PLAN.md) — **TMDB does not provide "coming soon to streaming" data**; its `/watch/providers` reflects *current* availability only. This doc assesses candidate sources honestly and sketches a design that degrades gracefully.
 
-**Status: planned (stretch — feasibility: partial)**
+**Status: v1 shipped as a much smaller subset (2026-07-04), Tiers 1-3 below still planned.**
+A "Coming soon" tab (`GET /api/upcoming`, `TMDBClient.upcoming_movies`) ships theatrical GB
+release dates straight from `/movie/upcoming` — no personalisation, no streaming-arrival data,
+no new table/job. It exists specifically because the three tiers below all require a weekly
+snapshot-diff job and a new `coming_soon` migration that weren't built in this round; this is
+the zero-new-infrastructure stopgap, clearly labelled in the UI as cinema dates rather than
+implying a streaming date. Tiers 1-3 remain the real target design.
 
 ---
 

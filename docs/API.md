@@ -362,6 +362,19 @@ level) — see pipeline.py's `_owned_film_ids`.
 
 ---
 
+## Phase 8 — Coming soon
+
+**Status: v1 shipped (2026-07-04) as a much smaller subset** — see PHASE-8-coming-soon.md's
+status note. This is theatrical release dates only, not streaming arrivals (TMDB doesn't
+reliably expose those — that needs the phase doc's Tiers 1-3, a weekly job + new table, not
+built here).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/upcoming?region=GB&page=1` | upcoming cinema releases from TMDB `/movie/upcoming`, trimmed to `{id, title, overview, poster, release_date}` |
+
+---
+
 ## Endpoint ↔ phase summary
 
 | Phase | New endpoints |
@@ -372,5 +385,6 @@ level) — see pipeline.py's `_owned_film_ids`.
 | 5 | `/api/letterboxd/log*` |
 | 6 | `/api/insights/services` |
 | 7 | `/api/media/*` |
+| 8 | `/api/upcoming` |
 
 > Note on ordering: full login ships in Phase 4, but the API is internet-exposed from the moment the tunnel goes live. **Interim guard for Phases 2–3:** a single static bearer token (`MISHKA_DEV_TOKEN`, long random string, required by the same global dependency; the SPA keeps it in localStorage after a minimal token-entry screen). This keeps "every endpoint except /api/health requires auth" true from day one and is replaced transparently by JWTs in Phase 4.
