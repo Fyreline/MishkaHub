@@ -599,7 +599,7 @@ function UnseenRecommendationsRow() {
     <section className="pb-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-serif text-2xl text-ink sm:text-3xl">Something new to watch</h1>
+          <h2 className="font-serif text-2xl text-ink sm:text-3xl">Something new to watch</h2>
           <p className="mt-0.5 text-sm text-ink-soft">
             Unwatched (or not seen in a while) — from what&apos;s actually streaming right now.
           </p>
@@ -826,33 +826,14 @@ export default function App() {
   return (
     <div className="min-h-full bg-paper text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-paper/95">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2.5 px-5 py-3">
-          <div className="flex shrink-0 items-center gap-2.5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-2.5">
             <CatMark />
             <span className="font-display text-lg font-medium tracking-[-0.005em]">
               Mishka <span className="text-clay">Hub</span>
             </span>
           </div>
-
-          <h1 className="shrink-0 font-serif text-base text-ink sm:text-lg">Films worth your night in.</h1>
-
-          <form onSubmit={onSearch} className="flex min-w-[160px] flex-1 gap-1.5 sm:max-w-xs">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search a film…"
-              className="min-w-0 flex-1 rounded-full border border-line-strong bg-white px-3.5 py-1.5 text-sm text-ink outline-none transition placeholder:text-cloud focus:border-clay focus:ring-3 focus:ring-clay/25 dark:bg-paper-mid"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="shrink-0 rounded-md bg-clay px-3.5 py-1.5 text-sm font-medium text-paper transition hover:bg-clay-deep disabled:opacity-50"
-            >
-              {loading ? '…' : 'Search'}
-            </button>
-          </form>
-
-          <div className="ml-auto flex shrink-0 items-center gap-3">
+          <div className="flex items-center gap-3">
             <StatusPill health={health} error={healthError} />
             <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
             <ThemeToggle />
@@ -865,6 +846,27 @@ export default function App() {
           <SettingsPage onBack={() => setView('catalogue')} />
         ) : (
           <>
+            {/* Small 2-line title + search block, then straight into
+                recommendations below a divider — not in the sticky header. */}
+            <div className="pb-6">
+              <h1 className="font-serif text-xl text-ink sm:text-2xl">Films worth your night in.</h1>
+              <form onSubmit={onSearch} className="mt-3 flex max-w-md gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search a film…"
+                  className="min-w-0 flex-1 rounded-full border border-line-strong bg-white px-4 py-2 text-sm text-ink outline-none transition placeholder:text-cloud focus:border-clay focus:ring-3 focus:ring-clay/25 dark:bg-paper-mid"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="shrink-0 rounded-md bg-clay px-4 py-2 text-sm font-medium text-paper transition hover:bg-clay-deep disabled:opacity-50"
+                >
+                  {loading ? '…' : 'Search'}
+                </button>
+              </form>
+            </div>
+
             {health && !health.tmdb_configured && (
               <p className="mb-4 text-xs text-clay-deep">
                 Heads up: add your TMDB key to <code className="rounded bg-oat px-1 font-mono">server/.env</code>{' '}
@@ -872,6 +874,7 @@ export default function App() {
               </p>
             )}
 
+            <div className="border-t border-line pt-6">
             {error && (
               <div className="mb-4 rounded-lg border border-fig/30 bg-fig/10 px-4 py-3 text-sm text-fig">{error}</div>
             )}
@@ -902,6 +905,7 @@ export default function App() {
             {selectedFilmId != null && <FilmExplorer filmId={selectedFilmId} onSelect={setSelectedFilmId} />}
 
             <UnseenRecommendationsRow />
+            </div>
 
             <div className="mt-10 border-t border-line pt-10">
               <Catalogue />
