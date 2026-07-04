@@ -396,17 +396,21 @@ function FilterPill({
   active,
   onClick,
   children,
+  size = 'md',
 }: {
   active: boolean
   onClick: () => void
   children: React.ReactNode
+  size?: 'sm' | 'md'
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-11 shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition sm:min-h-0 ${
+      className={`min-h-11 shrink-0 rounded-full border font-medium transition sm:min-h-0 ${
+        size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'
+      } ${
         active
           ? 'border-clay bg-clay/10 text-clay-deep'
           : 'border-line-strong bg-white text-ink-mid hover:bg-oat dark:bg-paper-mid'
@@ -818,10 +822,11 @@ function UnseenRecommendationsRow() {
         </div>
       </div>
 
-      {/* Row 1: genres, forced to a single scrollable row. */}
-      <div className="mt-4 flex flex-nowrap gap-1.5 overflow-x-auto pb-1">
+      {/* Row 1: genres — smaller pills + tighter gaps so the full set fits
+          one row on a normal desktop width without needing to scroll. */}
+      <div className="mt-4 flex flex-wrap gap-1">
         {GENRES.map((g) => (
-          <FilterPill key={g} active={genres.includes(g)} onClick={() => setGenres((prev) => toggleInArray(prev, g))}>
+          <FilterPill key={g} size="sm" active={genres.includes(g)} onClick={() => setGenres((prev) => toggleInArray(prev, g))}>
             {g}
           </FilterPill>
         ))}
