@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   api,
   type FilmDetail,
@@ -12,13 +13,19 @@ import { MovieCard } from './components/MovieCard'
 import { Catalogue } from './components/Catalogue'
 import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
-import { MoreLikeThisSection, UserRatingColumns, WhereToWatchSection } from './components/FilmDetailSections'
+import {
+  FilmHeaderSkeleton,
+  MoreLikeThisSection,
+  UserRatingColumns,
+  UserRatingColumnsSkeleton,
+  WhereToWatchSection,
+} from './components/FilmDetailSections'
 import { useFilmDetail } from './useFilmDetail'
 
 type VibeOption = { value: string; label: string }
 
 const VIBE_OPTIONS: VibeOption[] = [
-  { value: '', label: 'Any vibe' },
+  { value: '', label: 'Vibe' },
   { value: 'slow_burn', label: 'Slow burn' },
   { value: 'feel_good', label: 'Feel good' },
   { value: 'sad', label: 'Sad' },
@@ -27,12 +34,108 @@ const VIBE_OPTIONS: VibeOption[] = [
   { value: 'quick_watch', label: 'Quick watch' },
 ]
 
+/** Live-updating search: debounced as-you-type lookup with a poster+title/
+ * year dropdown, replacing the old submit-button + results-grid flow. */
+function SearchAutocomplete({ onSelect }: { onSelect: (id: number) => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Movie[]>([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = query.trim()
+    if (!q) {
+      setResults([])
+      setOpen(false)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    debounceRef.current = setTimeout(() => {
+      api
+        .search(q)
+        .then((data) => {
+          setResults(data.results.slice(0, 8))
+          setError(null)
+          setOpen(true)
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : String(err))
+          setResults([])
+        })
+        .finally(() => setLoading(false))
+    }, 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [query])
+
+  function handlePick(id: number) {
+    onSelect(id)
+    setQuery('')
+    setResults([])
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative mx-auto w-full max-w-xl">
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => {
+          if (results.length) setOpen(true)
+        }}
+        placeholder="Search a film…"
+        className="w-full rounded-full border border-line-strong bg-white px-5 py-3 text-center text-sm text-ink outline-none transition placeholder:text-cloud focus:border-clay focus:ring-3 focus:ring-clay/25 dark:bg-paper-mid sm:text-left"
+      />
+      <AnimatePresence>
+        {open && (loading || error || results.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-0 right-0 top-full z-30 mt-2 max-h-96 overflow-y-auto rounded-lg border border-line-strong bg-white shadow-float dark:bg-paper-mid"
+          >
+            {loading && <div className="p-3 text-sm text-ink-soft">Searching…</div>}
+            {error && !loading && <div className="p-3 text-sm text-fig">{error}</div>}
+            {!loading && !error && results.length === 0 && (
+              <div className="p-3 text-sm text-ink-soft">No films found.</div>
+            )}
+            {!loading &&
+              !error &&
+              results.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  // Fire selection before the input's blur can close the
+                  // dropdown out from under the click.
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    handlePick(m.id)
+                  }}
+                  className="flex w-full items-center gap-3 p-2 text-left transition hover:bg-oat"
+                >
+                  <div className="h-14 w-10 shrink-0 overflow-hidden rounded-sm bg-paper-deep">
+                    {m.poster && <img src={m.poster} alt="" className="h-full w-full object-cover" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-ink">{m.title}</div>
+                    <div className="text-xs text-ink-soft">{m.year ?? '—'}</div>
+                  </div>
+                </button>
+              ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 /** "You're looking at" + "More like this" panel — shown once a search result
  * (or a similar-film result) is selected. Recursively explorable: clicking a
- * similar-film card re-selects that film as the new focus. Search behavior
- * is unchanged by the homepage restructure — only the "Something new to
- * watch" row got a new expand-in-place interaction (see
- * UnseenRecommendationsRow below). */
+ * similar-film card re-selects that film as the new focus. */
 function FilmExplorer({ filmId, onSelect }: { filmId: number; onSelect: (id: number) => void }) {
   const [detail, setDetail] = useState<FilmDetail | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -93,7 +196,12 @@ function FilmExplorer({ filmId, onSelect }: { filmId: number; onSelect: (id: num
 
   return (
     <section className="mt-8 border-t border-line pt-8">
-      {detailLoading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {detailLoading && (
+        <div className="grid gap-6 sm:grid-cols-[minmax(0,180px)_1fr]">
+          <div className="aspect-2/3 w-full max-w-[180px] animate-pulse rounded-sm bg-paper-deep" />
+          <FilmHeaderSkeleton />
+        </div>
+      )}
       {detailError && !detailLoading && (
         <div className="rounded-lg border border-fig/30 bg-fig/10 px-4 py-3 text-sm text-fig">
           Nothing here yet — {detailError}
@@ -298,7 +406,7 @@ function FilterPill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-11 rounded-full border px-2.5 py-1 text-xs font-medium transition sm:min-h-0 ${
+      className={`min-h-11 shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition sm:min-h-0 ${
         active
           ? 'border-clay bg-clay/10 text-clay-deep'
           : 'border-line-strong bg-white text-ink-mid hover:bg-oat dark:bg-paper-mid'
@@ -309,38 +417,37 @@ function FilterPill({
   )
 }
 
-/** A small SVG connector — "vaguely like a curly bracket on its side" —
- * linking the poster card that was clicked to the expansion panel below it.
- * Positioned by percentage across the row so it tracks the clicked column
- * regardless of the current responsive column count. */
-function BraceConnector({ leftPercent }: { leftPercent: number }) {
+/** A wide connector spanning the recommendations row, peaking up toward the
+ * clicked poster and flowing along the top of the expansion panel below it —
+ * "vaguely like a curly bracket on its side," coming out of the panel to
+ * meet the card it expanded from. `peakPercent` positions the peak; the two
+ * arms always run the panel's full width regardless of column count. */
+function BraceConnector({ peakPercent }: { peakPercent: number }) {
+  const p = Math.max(4, Math.min(96, peakPercent))
+  const d = `M0,18 C${p * 0.55},18 ${p * 0.82},2 ${p},2 C${p + (100 - p) * 0.18},2 ${p + (100 - p) * 0.45},18 100,18`
   return (
     <svg
-      viewBox="0 0 48 20"
+      viewBox="0 0 100 20"
       preserveAspectRatio="none"
       aria-hidden
-      className="pointer-events-none absolute top-0 h-5 w-12 -translate-x-1/2 text-clay/60"
-      style={{ left: `${leftPercent}%` }}
+      className="pointer-events-none mt-1 h-5 w-full text-clay/60"
     >
-      <path
-        d="M2 1 C2 12 21 5 24 17 C27 5 46 12 46 1"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
 
 /** The horizontal expand-in-place detail view for a clicked recommendation
- * card: poster on the left, masked so it visually dissolves into the panel's
- * background toward the right instead of a hard edge, with the full detail
- * content (identical data/behavior to Catalogue.tsx's DetailDrawer, via the
- * shared useFilmDetail hook + FilmDetailSections) beginning around the
- * fade-out point. Deliberately a separate shell from DetailDrawer — the
- * Cat-alogue's own click-through is untouched — but both consume the exact
- * same underlying hook/sections, so there's no behavior drift between them. */
+ * card. Uses the film's backdrop (the same wide "frame" shown atop the
+ * Cat-alogue's DetailDrawer) rather than the vertical poster, sized to
+ * whatever height the title/meta/synopsis/genres block naturally needs (pure
+ * CSS: the image is absolutely positioned against that block's own relative
+ * container, so it always matches without any JS measurement). A gradient
+ * scrim fades the image out into a *solid* panel-background colour — not
+ * just an alpha mask — so text stays legible in both light and dark mode;
+ * the fade starts early enough that the text area is fully opaque. Shares
+ * the exact same data/behavior as Catalogue.tsx's DetailDrawer via
+ * useFilmDetail + FilmDetailSections; only the shell differs. */
 function RecommendationExpansionPanel({
   filmId,
   onNavigate,
@@ -353,6 +460,8 @@ function RecommendationExpansionPanel({
   const {
     detail,
     availability,
+    availabilityError,
+    availabilityLoading,
     error,
     loading,
     similar,
@@ -381,7 +490,13 @@ function RecommendationExpansionPanel({
   } = useFilmDetail(filmId, onNavigate)
 
   return (
-    <div className="relative mt-3 overflow-hidden rounded-xl bg-ink/[0.035] p-4 dark:bg-black/25 sm:p-6">
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="relative overflow-hidden rounded-xl bg-paper-mid p-4 sm:p-6"
+    >
       <button
         type="button"
         onClick={onClose}
@@ -390,158 +505,155 @@ function RecommendationExpansionPanel({
         Close
       </button>
 
-      {loading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {loading && (
+        <div className="pr-10">
+          <FilmHeaderSkeleton />
+          <div className="mt-4">
+            <UserRatingColumnsSkeleton />
+          </div>
+        </div>
+      )}
       {error && !loading && <p className="text-sm text-fig">Couldn&apos;t load this film yet — {error}</p>}
 
       {detail && !loading && (
-        <div className="flex flex-col gap-5 sm:flex-row sm:gap-0">
-          {/* Poster, masked to fade into the panel's background on its right
-              edge — a real image-level dissolve (via mask-image) rather than
-              a gradient overlay guessing at the background colour, so it
-              stays correct in both light and dark mode automatically. */}
-          <div className="mx-auto w-40 shrink-0 self-start sm:mx-0 sm:w-64">
-            <div className="aspect-2/3 w-full overflow-hidden rounded-sm shadow-float">
-              {detail.poster ? (
-                <img
-                  src={detail.poster}
-                  alt={detail.title}
-                  className="h-full w-full object-cover"
-                  style={{
-                    WebkitMaskImage: 'linear-gradient(to right, black 50%, transparent 92%)',
-                    maskImage: 'linear-gradient(to right, black 50%, transparent 92%)',
-                  }}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-paper-deep p-3 text-center text-sm text-ink-soft">
-                  {detail.title}
+        <div>
+          {/* Backdrop-as-background header: image absolutely fills this
+              relative container, whose height is set purely by the in-flow
+              text content — always exactly as tall as the synopsis needs. */}
+          <div className="relative -m-4 mb-0 overflow-hidden rounded-t-xl sm:-m-6 sm:mb-0">
+            {detail.backdrop && (
+              <img src={detail.backdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
+            )}
+            {detail.backdrop && (
+              <div
+                className="absolute inset-0"
+                aria-hidden
+                style={{
+                  background:
+                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 30%, transparent) 0%, var(--color-paper-mid) 45%)',
+                }}
+              />
+            )}
+            <div className="relative p-4 pr-12 sm:p-6 sm:pr-14">
+              <h3 className="font-serif text-xl text-ink">{detail.title}</h3>
+              <p className="mt-0.5 text-xs text-ink-soft">
+                {detail.year ?? '—'}
+                {detail.runtime_min ? ` · ${detail.runtime_min} min` : ''}
+              </p>
+              <button
+                type="button"
+                onClick={() => setRematchOpen((v) => !v)}
+                className="mt-1 text-[11px] text-cloud underline decoration-dotted underline-offset-2 transition hover:text-ink-soft"
+              >
+                Wrong film?
+              </button>
+
+              {rematchOpen && (
+                <div className="mt-2 rounded-md border border-line-strong bg-paper p-3">
+                  <p className="text-[11px] text-ink-soft">
+                    Search TMDB for the film this should actually be, then pick it to move all
+                    watch/rating/like/review history over.
+                  </p>
+                  <form onSubmit={handleRematchSearch} className="mt-2 flex gap-1.5">
+                    <input
+                      type="text"
+                      value={rematchQuery}
+                      onChange={(e) => setRematchQuery(e.target.value)}
+                      placeholder="Search by title…"
+                      className="min-w-0 flex-1 rounded-md border border-line-strong bg-white dark:bg-paper-mid px-2 py-1.5 text-sm text-ink placeholder:text-cloud"
+                    />
+                    <button
+                      type="submit"
+                      disabled={rematchSearching || !rematchQuery.trim()}
+                      className="min-h-11 rounded-md border border-line-strong bg-white dark:bg-paper-mid px-2.5 py-1 text-[11px] font-medium text-ink-mid transition hover:bg-oat disabled:opacity-50 sm:min-h-0"
+                    >
+                      {rematchSearching ? 'Searching…' : 'Search'}
+                    </button>
+                  </form>
+
+                  {rematchError && <p className="mt-1.5 text-[11px] text-fig">{rematchError}</p>}
+
+                  {rematchResults.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {rematchResults.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            disabled={rematchApplyingId !== null}
+                            onClick={() => handleRematchPick(c.id)}
+                            className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-oat disabled:opacity-50"
+                          >
+                            <div className="h-12 w-8 shrink-0 overflow-hidden rounded-sm bg-paper-deep">
+                              {c.poster && <img src={c.poster} alt="" className="h-full w-full object-cover" />}
+                            </div>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm text-ink-mid">{c.title}</span>
+                              <span className="block text-[11px] text-cloud">{c.year ?? '—'}</span>
+                            </span>
+                            {rematchApplyingId === c.id && (
+                              <span className="shrink-0 text-[11px] text-ink-soft">Applying…</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {detail.overview && <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-mid">{detail.overview}</p>}
+
+              {detail.genres.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {detail.genres.map((g) => (
+                    <span key={g} className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-ink-soft">
+                      {g}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Content begins roughly where the poster has faded out, so the
-              two visually blend into one continuous panel. */}
-          <div className="min-w-0 flex-1 pr-8 sm:-ml-20 sm:pl-0">
-            <h3 className="font-serif text-xl text-ink">{detail.title}</h3>
-            <p className="mt-0.5 text-xs text-ink-soft">
-              {detail.year ?? '—'}
-              {detail.runtime_min ? ` · ${detail.runtime_min} min` : ''}
-            </p>
-            <button
-              type="button"
-              onClick={() => setRematchOpen((v) => !v)}
-              className="mt-1 text-[11px] text-cloud underline decoration-dotted underline-offset-2 transition hover:text-ink-soft"
-            >
-              Wrong film?
-            </button>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <UserRatingColumns
+              detail={detail}
+              ratingBusy={ratingBusy}
+              ratingError={ratingError}
+              likedBusy={likedBusy}
+              likedError={likedError}
+              seenBusy={seenBusy}
+              seenError={seenError}
+              onSetRating={handleSetRating}
+              onClearRating={handleClearRating}
+              onToggleLiked={handleToggleLiked}
+              onMarkSeen={handleMarkSeen}
+            />
+            <WhereToWatchSection availability={availability} loading={availabilityLoading} error={availabilityError} />
+          </div>
 
-            {rematchOpen && (
-              <div className="mt-2 rounded-md border border-line-strong bg-paper-mid p-3">
-                <p className="text-[11px] text-ink-soft">
-                  Search TMDB for the film this should actually be, then pick it to move all
-                  watch/rating/like/review history over.
-                </p>
-                <form onSubmit={handleRematchSearch} className="mt-2 flex gap-1.5">
-                  <input
-                    type="text"
-                    value={rematchQuery}
-                    onChange={(e) => setRematchQuery(e.target.value)}
-                    placeholder="Search by title…"
-                    className="min-w-0 flex-1 rounded-md border border-line-strong bg-white dark:bg-paper px-2 py-1.5 text-sm text-ink placeholder:text-cloud"
-                  />
-                  <button
-                    type="submit"
-                    disabled={rematchSearching || !rematchQuery.trim()}
-                    className="min-h-11 rounded-md border border-line-strong bg-white dark:bg-paper-mid px-2.5 py-1 text-[11px] font-medium text-ink-mid transition hover:bg-oat disabled:opacity-50 sm:min-h-0"
-                  >
-                    {rematchSearching ? 'Searching…' : 'Search'}
-                  </button>
-                </form>
-
-                {rematchError && <p className="mt-1.5 text-[11px] text-fig">{rematchError}</p>}
-
-                {rematchResults.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {rematchResults.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          disabled={rematchApplyingId !== null}
-                          onClick={() => handleRematchPick(c.id)}
-                          className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-oat disabled:opacity-50"
-                        >
-                          <div className="h-12 w-8 shrink-0 overflow-hidden rounded-sm bg-paper-deep">
-                            {c.poster && <img src={c.poster} alt="" className="h-full w-full object-cover" />}
-                          </div>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-ink-mid">{c.title}</span>
-                            <span className="block text-[11px] text-cloud">{c.year ?? '—'}</span>
-                          </span>
-                          {rematchApplyingId === c.id && (
-                            <span className="shrink-0 text-[11px] text-ink-soft">Applying…</span>
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            {detail.overview && <p className="mt-3 text-sm leading-relaxed text-ink-mid">{detail.overview}</p>}
-
-            {detail.genres.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {detail.genres.map((g) => (
-                  <span key={g} className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-ink-soft">
-                    {g}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-4">
-              <UserRatingColumns
-                detail={detail}
-                ratingBusy={ratingBusy}
-                ratingError={ratingError}
-                likedBusy={likedBusy}
-                likedError={likedError}
-                seenBusy={seenBusy}
-                seenError={seenError}
-                onSetRating={handleSetRating}
-                onClearRating={handleClearRating}
-                onToggleLiked={handleToggleLiked}
-                onMarkSeen={handleMarkSeen}
-              />
-            </div>
-
-            <div className="mt-4">
-              <WhereToWatchSection availability={availability} />
-            </div>
-
-            <div className="mt-4">
-              <MoreLikeThisSection
-                similar={similar}
-                similarLoading={similarLoading}
-                similarError={similarError}
-                onNavigate={onNavigate}
-                columns={5}
-              />
-            </div>
+          <div className="mt-4">
+            <MoreLikeThisSection
+              similar={similar}
+              similarLoading={similarLoading}
+              similarError={similarError}
+              onNavigate={onNavigate}
+              columns={6}
+            />
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
 /** "Something new to watch" — the homepage's main section: a single row of
  * unwatched/stale recommendations with its own profile toggle + filter bar
- * (runtime, genre, vibe), independent of the Cat-alogue's own filters per
- * the household's "leave the Cat-alogue alone" instruction. Clicking a card
- * expands a horizontal detail panel in place, right below the row — not the
- * Cat-alogue's full-page/side-panel DetailDrawer. */
+ * (genres on one row, runtime + vibe on the next), independent of the
+ * Cat-alogue's own filters per the household's "leave the Cat-alogue alone"
+ * instruction. Clicking a card expands a horizontal detail panel in place,
+ * right below the row; clicking the same card again (or its own Close
+ * button) collapses it. */
 function UnseenRecommendationsRow() {
   const [profile, setProfile] = useState<RecommendationProfile>('together')
   const [runtimeBuckets, setRuntimeBuckets] = useState<RuntimeBucket[]>([])
@@ -621,27 +733,26 @@ function UnseenRecommendationsRow() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-1.5">
-          {RUNTIME_BUCKET_OPTIONS.map((opt) => (
-            <FilterPill
-              key={opt.value}
-              active={runtimeBuckets.includes(opt.value)}
-              onClick={() => setRuntimeBuckets((prev) => toggleInArray(prev, opt.value))}
-            >
-              {opt.label}
-            </FilterPill>
-          ))}
-        </div>
-        <span className="hidden h-4 w-px bg-line-strong sm:block" aria-hidden />
-        <div className="flex flex-wrap gap-1.5">
-          {GENRES.map((g) => (
-            <FilterPill key={g} active={genres.includes(g)} onClick={() => setGenres((prev) => toggleInArray(prev, g))}>
-              {g}
-            </FilterPill>
-          ))}
-        </div>
-        <span className="hidden h-4 w-px bg-line-strong sm:block" aria-hidden />
+      {/* Row 1: genres, forced to a single scrollable row. */}
+      <div className="mt-4 flex flex-nowrap gap-1.5 overflow-x-auto pb-1">
+        {GENRES.map((g) => (
+          <FilterPill key={g} active={genres.includes(g)} onClick={() => setGenres((prev) => toggleInArray(prev, g))}>
+            {g}
+          </FilterPill>
+        ))}
+      </div>
+
+      {/* Row 2: runtime buckets + vibe. */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {RUNTIME_BUCKET_OPTIONS.map((opt) => (
+          <FilterPill
+            key={opt.value}
+            active={runtimeBuckets.includes(opt.value)}
+            onClick={() => setRuntimeBuckets((prev) => toggleInArray(prev, opt.value))}
+          >
+            {opt.label}
+          </FilterPill>
+        ))}
         <select
           value={vibe}
           onChange={(e) => setVibe(e.target.value)}
@@ -655,7 +766,7 @@ function UnseenRecommendationsRow() {
         </select>
       </div>
 
-      <div className="relative mt-5">
+      <div className="mt-5">
         {loading && (
           <div
             className="grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
@@ -699,16 +810,18 @@ function UnseenRecommendationsRow() {
           </div>
         )}
 
-        {expanded && (
-          <>
-            <BraceConnector leftPercent={((expanded.index + 0.5) / columns) * 100} />
-            <RecommendationExpansionPanel
-              filmId={expanded.filmId}
-              onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
-              onClose={() => setExpanded(null)}
-            />
-          </>
-        )}
+        <AnimatePresence>
+          {expanded && (
+            <div key="expansion">
+              <BraceConnector peakPercent={((expanded.index + 0.5) / columns) * 100} />
+              <RecommendationExpansionPanel
+                filmId={expanded.filmId}
+                onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
+                onClose={() => setExpanded(null)}
+              />
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </section>
   )
@@ -794,34 +907,11 @@ export default function App() {
   const [view, setView] = useState<View>('catalogue')
   const [health, setHealth] = useState<Health | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [movies, setMovies] = useState<Movie[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [searched, setSearched] = useState(false)
   const [selectedFilmId, setSelectedFilmId] = useState<number | null>(null)
 
   useEffect(() => {
     api.health().then(setHealth).catch((e) => setHealthError(String(e)))
   }, [])
-
-  async function onSearch(e: FormEvent) {
-    e.preventDefault()
-    const q = query.trim()
-    if (!q) return
-    setLoading(true)
-    setError(null)
-    setSearched(true)
-    try {
-      const data = await api.search(q)
-      setMovies(data.results)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setMovies([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   return (
     <div className="min-h-full bg-paper text-ink">
@@ -846,25 +936,13 @@ export default function App() {
           <SettingsPage onBack={() => setView('catalogue')} />
         ) : (
           <>
-            {/* Small 2-line title + search block, then straight into
-                recommendations below a divider — not in the sticky header. */}
-            <div className="pb-6">
-              <h1 className="font-serif text-xl text-ink sm:text-2xl">Films worth your night in.</h1>
-              <form onSubmit={onSearch} className="mt-3 flex max-w-md gap-2">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search a film…"
-                  className="min-w-0 flex-1 rounded-full border border-line-strong bg-white px-4 py-2 text-sm text-ink outline-none transition placeholder:text-cloud focus:border-clay focus:ring-3 focus:ring-clay/25 dark:bg-paper-mid"
-                />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="shrink-0 rounded-md bg-clay px-4 py-2 text-sm font-medium text-paper transition hover:bg-clay-deep disabled:opacity-50"
-                >
-                  {loading ? '…' : 'Search'}
-                </button>
-              </form>
+            <div className="pb-8 text-center">
+              <h1 className="mx-auto max-w-2xl text-balance font-serif text-4xl font-normal tracking-[-0.005em] text-ink sm:text-5xl">
+                Films worth your night in.
+              </h1>
+              <div className="mt-6">
+                <SearchAutocomplete onSelect={setSelectedFilmId} />
+              </div>
             </div>
 
             {health && !health.tmdb_configured && (
@@ -875,36 +953,9 @@ export default function App() {
             )}
 
             <div className="border-t border-line pt-6">
-            {error && (
-              <div className="mb-4 rounded-lg border border-fig/30 bg-fig/10 px-4 py-3 text-sm text-fig">{error}</div>
-            )}
+              {selectedFilmId != null && <FilmExplorer filmId={selectedFilmId} onSelect={setSelectedFilmId} />}
 
-            {loading && (
-              <div className="mb-8 grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8">
-                {Array.from({ length: 16 }).map((_, i) => (
-                  <div key={i} className="aspect-2/3 animate-pulse rounded-sm bg-paper-deep" />
-                ))}
-              </div>
-            )}
-
-            {!loading && movies.length > 0 && (
-              <div
-                className="mb-8 grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
-                style={{ perspective: '800px' }}
-              >
-                {movies.map((m) => (
-                  <MovieCard key={m.id} movie={m} onClick={() => setSelectedFilmId(m.id)} />
-                ))}
-              </div>
-            )}
-
-            {!loading && !error && searched && movies.length === 0 && (
-              <p className="mb-8 text-center text-ink-soft">No films found. Try another title.</p>
-            )}
-
-            {selectedFilmId != null && <FilmExplorer filmId={selectedFilmId} onSelect={setSelectedFilmId} />}
-
-            <UnseenRecommendationsRow />
+              <UnseenRecommendationsRow />
             </div>
 
             <div className="mt-10 border-t border-line pt-10">

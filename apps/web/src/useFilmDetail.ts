@@ -46,9 +46,16 @@ export function sourceLabel(source: FilmDetail['source']): string {
  */
 export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) {
   const [detail, setDetail] = useState<FilmDetail | null>(null)
-  const [availability, setAvailability] = useState<FilmAvailability | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Availability is fetched independently of the core detail (title/
+  // synopsis/genres) so "Where to watch" can show its own skeleton and
+  // resolve on its own timeline instead of blocking the rest of the card —
+  // same idea already applied to "similar" below.
+  const [availability, setAvailability] = useState<FilmAvailability | null>(null)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(true)
 
   const [similar, setSimilar] = useState<SimilarFilm[]>([])
   const [similarError, setSimilarError] = useState<string | null>(null)
@@ -75,16 +82,15 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
     setLoading(true)
     setError(null)
     setDetail(null)
-    setAvailability(null)
     setRematchOpen(false)
     setRematchQuery('')
     setRematchResults([])
     setRematchError(null)
-    Promise.all([api.getFilm(filmId), api.getFilmAvailability(filmId)])
-      .then(([d, a]) => {
+    api
+      .getFilm(filmId)
+      .then((d) => {
         if (cancelled) return
         setDetail(d)
-        setAvailability(a)
       })
       .catch((err) => {
         if (cancelled) return
@@ -92,6 +98,29 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [filmId])
+
+  useEffect(() => {
+    let cancelled = false
+    setAvailabilityLoading(true)
+    setAvailabilityError(null)
+    setAvailability(null)
+    api
+      .getFilmAvailability(filmId)
+      .then((a) => {
+        if (cancelled) return
+        setAvailability(a)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAvailabilityError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!cancelled) setAvailabilityLoading(false)
       })
     return () => {
       cancelled = true
@@ -238,6 +267,8 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
   return {
     detail,
     availability,
+    availabilityError,
+    availabilityLoading,
     error,
     loading,
     similar,

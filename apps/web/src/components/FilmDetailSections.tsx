@@ -2,6 +2,42 @@ import type { FilmAvailability, FilmDetail, SimilarFilm } from '../api'
 import { userIdForKey, type UserKey } from '../useFilmDetail'
 import { StarRatingInput } from './StarRatingInput'
 
+/** Placeholder shape for the title/meta/overview/genres block while `detail`
+ * is still loading — shown instead of a plain "Loading…" so the card's
+ * layout doesn't jump once real content arrives. */
+export function FilmHeaderSkeleton() {
+  return (
+    <div className="animate-pulse space-y-3">
+      <div className="h-6 w-2/3 rounded bg-paper-deep" />
+      <div className="h-3 w-1/3 rounded bg-paper-deep" />
+      <div className="space-y-1.5">
+        <div className="h-3 w-full rounded bg-paper-deep" />
+        <div className="h-3 w-full rounded bg-paper-deep" />
+        <div className="h-3 w-2/3 rounded bg-paper-deep" />
+      </div>
+      <div className="flex gap-1.5">
+        <div className="h-5 w-16 rounded-full bg-paper-deep" />
+        <div className="h-5 w-16 rounded-full bg-paper-deep" />
+      </div>
+    </div>
+  )
+}
+
+/** Placeholder shape for UserRatingColumns while `detail` is still loading. */
+export function UserRatingColumnsSkeleton() {
+  return (
+    <div className="grid animate-pulse grid-cols-2 gap-3 border-t border-line pt-4">
+      {[0, 1].map((i) => (
+        <div key={i} className="space-y-2">
+          <div className="h-3 w-14 rounded bg-paper-deep" />
+          <div className="h-4 w-24 rounded bg-paper-deep" />
+          <div className="h-3 w-20 rounded bg-paper-deep" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Both users' rating/liked/watched controls, side by side. Shared between
  * Catalogue.tsx's DetailDrawer and the homepage's expand-in-place
  * recommendation panel — always both interactive, regardless of which
@@ -101,27 +137,65 @@ export function UserRatingColumns({
 
 /** Streaming-only offers list (rent/buy already excluded server-side, but
  * this client-side kind filter is kept as a defensive belt-and-braces check
- * — matches the pre-existing DetailDrawer behavior exactly). */
-export function WhereToWatchSection({ availability }: { availability: FilmAvailability | null }) {
+ * — matches the pre-existing DetailDrawer behavior exactly). Each offer is a
+ * "Watch now" link straight to the film's TMDB watch page rather than a
+ * flatrate/ads kind label — TMDB's public API doesn't expose a true
+ * per-provider deep link, so the watch page (which itself lists/links the
+ * real providers via JustWatch) is the most honest "take me there" target
+ * available. Loads independently of the rest of the detail view, so it gets
+ * its own skeleton/error state. */
+export function WhereToWatchSection({
+  availability,
+  loading,
+  error,
+}: {
+  availability: FilmAvailability | null
+  loading: boolean
+  error: string | null
+}) {
   const streamingOffers =
     availability?.offers.filter((o) => o.kind === 'flatrate' || o.kind === 'free' || o.kind === 'ads') ?? []
   return (
     <div className="border-t border-line pt-4">
       <h4 className="text-sm font-medium text-ink">Where to watch</h4>
-      {streamingOffers.length > 0 ? (
-        <ul className="mt-2 space-y-1.5">
-          {streamingOffers.map((o) => (
-            <li
-              key={`${o.provider_id}-${o.kind}`}
-              className="flex items-center justify-between rounded-md bg-paper-mid px-3 py-2 text-sm"
-            >
-              <span className="text-ink-mid">{o.provider_name}</span>
-              <span className="font-mono text-[11px] uppercase text-ink-soft">{o.kind}</span>
-            </li>
+
+      {loading && (
+        <div className="mt-2 space-y-1.5">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="h-9 animate-pulse rounded-md bg-paper-deep" />
           ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-sm text-ink-soft">Not streaming anywhere you have right now.</p>
+        </div>
+      )}
+
+      {error && !loading && <p className="mt-2 text-sm text-ink-soft">Nothing here yet — {error}</p>}
+
+      {!loading && !error && (
+        <>
+          {streamingOffers.length > 0 ? (
+            <ul className="mt-2 space-y-1.5">
+              {streamingOffers.map((o) => (
+                <li
+                  key={`${o.provider_id}-${o.kind}`}
+                  className="flex items-center justify-between rounded-md bg-paper-mid px-3 py-2 text-sm"
+                >
+                  <span className="text-ink-mid">{o.provider_name}</span>
+                  {availability?.tmdb_watch_page && (
+                    <a
+                      href={availability.tmdb_watch_page}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-11 rounded-md bg-clay px-2.5 py-1 text-xs font-medium text-paper transition hover:bg-clay-deep sm:min-h-0 sm:py-1"
+                    >
+                      Watch now
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-ink-soft">Not streaming anywhere you have right now.</p>
+          )}
+        </>
       )}
       <p className="mt-2 font-mono text-[11px] text-cloud">Streaming availability by JustWatch</p>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   api,
   ApiError,
@@ -9,7 +10,13 @@ import {
   type UnmatchedImport,
 } from '../api'
 import { MovieCard, type CatalogueBadgeInfo } from './MovieCard'
-import { MoreLikeThisSection, UserRatingColumns, WhereToWatchSection } from './FilmDetailSections'
+import {
+  FilmHeaderSkeleton,
+  MoreLikeThisSection,
+  UserRatingColumns,
+  UserRatingColumnsSkeleton,
+  WhereToWatchSection,
+} from './FilmDetailSections'
 import { sourceLabel, useFilmDetail } from '../useFilmDetail'
 
 const PAGE_SIZE = 60
@@ -310,6 +317,8 @@ function DetailDrawer({
   const {
     detail,
     availability,
+    availabilityError,
+    availabilityLoading,
     error,
     loading,
     similar,
@@ -362,8 +371,20 @@ function DetailDrawer({
       {/* Backdrop dimmer — pinned to a fixed dark scrim (not the `ink` token,
           which flips to a light color in dark mode and would brighten the
           page behind the drawer instead of dimming it). */}
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden />
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="absolute inset-0 bg-black/30"
+        onClick={onClose}
+        aria-hidden
+      />
+      <motion.div
+        initial={{ opacity: 0, x: 24 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 24 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
         role="dialog"
         aria-modal="true"
         onScroll={handleScroll}
@@ -397,7 +418,12 @@ function DetailDrawer({
           </button>
         </div>
 
-        {loading && <div className="p-5 text-sm text-ink-soft">Loading…</div>}
+        {loading && (
+          <div className="space-y-4 p-5">
+            <FilmHeaderSkeleton />
+            <UserRatingColumnsSkeleton />
+          </div>
+        )}
         {error && !loading && (
           <div className="p-5 text-sm text-fig">Couldn&apos;t load this film yet — {error}</div>
         )}
@@ -515,7 +541,11 @@ function DetailDrawer({
                 onMarkSeen={handleMarkSeen}
               />
 
-              <WhereToWatchSection availability={availability} />
+              <WhereToWatchSection
+                availability={availability}
+                loading={availabilityLoading}
+                error={availabilityError}
+              />
 
               <MoreLikeThisSection
                 similar={similar}
@@ -526,7 +556,7 @@ function DetailDrawer({
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   )
 }
@@ -1020,13 +1050,16 @@ export function Catalogue() {
         )}
       </div>
 
-      {selectedFilmId != null && (
-        <DetailDrawer
-          filmId={selectedFilmId}
-          onClose={() => setSelectedFilmId(null)}
-          onNavigate={setSelectedFilmId}
-        />
-      )}
+      <AnimatePresence>
+        {selectedFilmId != null && (
+          <DetailDrawer
+            key="detail-drawer"
+            filmId={selectedFilmId}
+            onClose={() => setSelectedFilmId(null)}
+            onNavigate={setSelectedFilmId}
+          />
+        )}
+      </AnimatePresence>
     </section>
   )
 }
