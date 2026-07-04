@@ -542,7 +542,10 @@ function RecommendationExpansionPanel({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="relative overflow-hidden rounded-xl bg-paper-mid p-4 sm:p-6"
+      // Border on the sides + bottom only (no top) — matches the brace's
+      // own color, so the connector reads as flowing straight into the box
+      // rather than the box being a separate, disconnected shape.
+      className="relative overflow-hidden rounded-xl border-x border-b border-clay/60 bg-paper-mid p-4 sm:p-6"
     >
       <button
         type="button"
