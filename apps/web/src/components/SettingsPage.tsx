@@ -166,6 +166,23 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      <div className="mt-6 rounded-lg border border-line-strong bg-paper-mid p-4">
+        <h2 className="text-sm font-medium text-ink">Letterboxd data</h2>
+        <p className="mt-1 text-xs text-ink-soft">
+          RSS keeps the library fresh automatically, but it only reliably carries logged/reviewed
+          entries — a plain &quot;mark as watched&quot; tap on Letterboxd doesn&apos;t always show up there. For the full,
+          definitive history, re-export your data from Letterboxd every so often and re-import the zip.
+        </p>
+        <a
+          href="https://letterboxd.com/user/exportdata"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex min-h-11 items-center rounded-md bg-clay px-3.5 py-1.5 text-xs font-medium text-paper transition hover:bg-clay-deep sm:min-h-0"
+        >
+          Export my Letterboxd data →
+        </a>
+      </div>
+
       <div className="mt-6">
         <input
           value={search}

@@ -143,6 +143,19 @@ def _normalize_entry(entry: Any) -> dict[str, Any] | None:
     }
 
 
+def parse_feed_text(text: str) -> list[dict[str, Any]]:
+    """Normalize already-downloaded RSS XML text — the shared core of
+    `fetch_feed` (live HTTP + this) so a one-off ingestion of a saved feed
+    export uses the exact same entry normalization as a live poll."""
+    parsed = feedparser.parse(text)
+    items: list[dict[str, Any]] = []
+    for entry in parsed.entries:
+        normalized = _normalize_entry(entry)
+        if normalized is not None:
+            items.append(normalized)
+    return items
+
+
 def fetch_feed(username: str) -> list[dict[str, Any]] | None:
     """Fetch + parse a member's Letterboxd RSS feed.
 
@@ -162,13 +175,7 @@ def fetch_feed(username: str) -> list[dict[str, Any]] | None:
         logger.warning("RSS fetch for %s returned non-200: %s", username, resp.status_code)
         return None
 
-    parsed = feedparser.parse(resp.text)
-    items: list[dict[str, Any]] = []
-    for entry in parsed.entries:
-        normalized = _normalize_entry(entry)
-        if normalized is not None:
-            items.append(normalized)
-    return items
+    return parse_feed_text(resp.text)
 
 
 def _get_or_create_sync_state(session: Session, user_id: int) -> SyncState:
@@ -225,7 +232,14 @@ async def _ensure_film(session: Session, tmdb_client: Any, tmdb_movie_id: int, l
     return film
 
 
-async def poll_user(session: Session, tmdb_client: Any, user_id: int, username: str) -> dict[str, Any]:
+async def poll_user(
+    session: Session,
+    tmdb_client: Any,
+    user_id: int,
+    username: str,
+    *,
+    override_items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Incrementally poll one user's Letterboxd RSS feed.
 
     Loads the (kind='rss', user_id) sync_state cursor (last <=200 seen
@@ -233,12 +247,18 @@ async def poll_user(session: Session, tmdb_client: Any, user_id: int, username: 
     films/watches/ratings/likes/reviews with source='letterboxd-rss', then
     advances the cursor (most-recent-first, capped at 200) and updates
     last_run_at / last_ok_at / status. Returns a summary dict.
+
+    ``override_items`` skips the live `fetch_feed` HTTP call and processes
+    the given pre-normalized items instead — used for one-off ingestion of
+    an already-downloaded feed export (e.g. household-provided .rss files)
+    through this exact same cursor/dedup/merge path, rather than a separate
+    one-off script duplicating the logic.
     """
     now = datetime.now(timezone.utc).isoformat()
     state = _get_or_create_sync_state(session, user_id)
     state.last_run_at = now
 
-    items = fetch_feed(username)
+    items = override_items if override_items is not None else fetch_feed(username)
     if items is None:
         state.status = "error"
         state.detail_json = json.dumps({"error": "non-200 or fetch failure"})
