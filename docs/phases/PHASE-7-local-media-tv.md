@@ -2,7 +2,13 @@
 
 Purpose: index the movie files the couple owns on the home Mac (later a Windows desktop), match them to TMDB ids so they appear inside Mishka Hub (poster wall badge "you own this", recommendable even when on no streaming service), and play them on the LG webOS TV from a **"Play on TV"** button in the Mishka Hub UI. This doc records the researched serving-stack decision (Jellyfin), the comparison that led there, file indexing/matching, and the playback control flow. Tables: `media_files` in [DATA_MODEL.md](../DATA_MODEL.md); endpoints: [API.md](../API.md) §Phase 7.
 
-**Status: planned**
+**Status: v1 shipped (2026-07-04)** — indexing, matching, and the recommender boost (§2, §5's
+"owned" badge/boost) are real and verified end-to-end. "Play on TV" (§3) is real code
+(`app/clients/jellyfin.py`, `POST /api/media/play`) but not yet exercised against a live
+Jellyfin server — the household hasn't set theirs up yet (it'll run on a separate desktop, not
+this machine) — so treat §3/§4 below as the target design, not a verified flow. ffprobe-based
+codec detection (`video_codec`/`audio_codec` columns) is also not implemented — sizes are
+recorded but codecs are left null, which doesn't block anything documented here.
 
 ---
 

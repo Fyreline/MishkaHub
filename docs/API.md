@@ -325,19 +325,39 @@ Credential endpoints already exist from Phase 2 (see §Phase 2 — Letterboxd cr
 
 ## Phase 7 — Local media → TV
 
+**Status: v1 shipped (2026-07-04)** — media indexing, TMDB matching, and the recommender's
+owned-films boost are real and verified; `POST /api/media/play` is real code
+(`clients/jellyfin.py`) but unexercised against a live Jellyfin server (the household's server
+runs on a separate desktop, not reachable from this environment).
+
 | Method & path | Purpose |
 |---|---|
-| `GET  /api/media/library` | indexed local files + TMDB match state |
-| `POST /api/media/scan` | rescan media folders (async job) |
-| `POST /api/media/match/{file_id}` | `{ "tmdb_id": 949 }` manual match |
-| `POST /api/media/play` | `{ "film_id": 949 }` → tell Jellyfin to play on the TV |
+| `GET /api/media` | indexed local files + TMDB match state (`{total, matched, unmatched, items}`) |
+| `GET /api/settings/media` | configured media root folders (`{roots}`) |
+| `PUT /api/settings/media` | replace the media root folder list |
+| `POST /api/media/scan` | walk the configured roots, upsert `media_files`, attempt matching (synchronous — fine at household-shelf scale) |
+| `POST /api/media/{file_id}/match` | `{ "tmdb_id": 949 }` manual match, hydrating the film from TMDB if needed |
+| `DELETE /api/media/{file_id}` | drop a `media_files` row (e.g. the file was deleted on disk) |
+| `POST /api/media/play` | `{ "film_id": 949 }` → tell the Jellyfin webOS session to play it now |
+
+Matching order on scan (importers/media_scan.py): (1) a Jellyfin library join by path when
+`MISHKA_JELLYFIN_URL`/`MISHKA_JELLYFIN_API_KEY` are configured — Jellyfin already did the hard
+scraping work, so this just reads its `ProviderIds.Tmdb`; (2) a filename parse (strip
+resolution/codec/source noise, extract title + year) + TMDB search, auto-matching only when the
+top result is unambiguous (same caution as the Letterboxd CSV matcher — an uncertain case is
+left for manual resolution rather than risking a silent wrong match); (3) manual search via the
+Owned tab's UI (backed by the existing `GET /api/tmdb/search`).
+
+Owned films get a flatrate-equivalent boost in `GET /api/recommendations` (each item carries an
+`"owned": true/false` flag) and in `GET /api/films/{id}/availability` (`"owned"` at the top
+level) — see pipeline.py's `_owned_film_ids`.
 
 ```json
 // POST /api/media/play
 { "film_id": 949 }
-// → 200 { "status": "playing", "target": "LG webOS TV", "via": "jellyfin",
-//          "jellyfin_item_id": "f0e1…" }
-// → 503 {"detail":"No Jellyfin session found for the TV — is it on?","code":"tv_not_available"}
+// → 200 { "playing": true }
+// → 400 {"detail":"Jellyfin is not configured on this server.","code":"jellyfin_not_configured"}
+// → 503 {"detail":"The living-room TV's Jellyfin app isn't reachable right now — make sure it's on and the app is open.","code":"tv_not_available"}
 ```
 
 ---
