@@ -115,7 +115,7 @@ Usage then reads `bg-paper text-ink border-line rounded-lg font-display` through
 | **Ghost/tertiary** | text-only `text-ink-soft`, hover `text-ink underline underline-offset-4`. |
 | **Input / select** | `bg-white border border-line-strong rounded-md px-3.5 py-2.5 text-ink placeholder:text-cloud`; focus: border-clay + ring `3px rgb(217 119 87 / 0.25)`; error: border-fig. Search input may go `rounded-full` in the filter bar. |
 | **Card** | `bg-paper-mid border border-line rounded-lg p-6`; hover (when interactive) `border-line-strong` + translate-y `-1px`; never a shadow at rest. |
-| **Nav/header** | sticky, `bg-paper/95` with plain 1px `border-line` bottom (no backdrop-blur glass); left: clapperboard + "Mishka Hub" in `font-display` with **clay** replacing the current indigo accent span; right: status pill + user avatar dot. |
+| **Nav/header** | sticky, `bg-paper/95` with plain 1px `border-line` bottom (no backdrop-blur glass); left: cat-face mark (`CatMark`, replaced the earlier clapperboard 2026-07-04 — two-eared silhouette + paper-colored eyes/mouth cutout, `currentColor` fill so it follows the clay accent and the theme; also exported flat as `public/cat-icon.svg` for the favicon, hardcoded colors since favicons don't get CSS vars) + "Mishka Hub" in `font-display` with **clay** replacing the current indigo accent span; right: status pill + user avatar dot. |
 | **Pills / status** | `rounded-full px-3 py-1 text-xs font-medium` tonal: ok = `bg-olive/15 text-olive`, warn = `bg-kraft/20 text-clay-deep`, error = `bg-fig/15 text-fig`, neutral = `bg-oat text-ink-mid`. (Direct port of the existing StatusPill states to the new palette.) |
 | **Rating badge** | mono 11px, `bg-ink/85 text-paper` on posters (readability over art), `★ 4.5` in clay when it's *your* rating vs `text-paper` for TMDB average. |
 | **User identity** | user 1 = clay dot, user 2 = sky dot, "together" = fig; used on poster badges, filter toggles, rec profiles. Consistent everywhere. |
@@ -221,3 +221,25 @@ a Tailwind class.
 
 `ThemeToggle` (`apps/web/src/components/ThemeToggle.tsx`) persists the choice to
 `localStorage` (`mishka-theme`), defaulting to the OS `prefers-color-scheme` on first visit.
+
+## 7. Recommendation-expansion brace connector (shipped 2026-07-04)
+
+Clicking a poster in "Something new to watch" expands a horizontal detail panel below the
+grid, and a curly-brace-shaped SVG connects the two so the relationship reads at a glance
+(`BraceConnector` + `bracePath()` in `App.tsx`).
+
+- **Shape** — generalized from a user-supplied, hand-tuned devtools path into a parametrized
+  `bracePath(peakPercent)`: flat shoulders out of each side, a tight point at the peak
+  (directly above the clicked poster), built from cubic beziers with *duplicate control
+  points* at each corner — the trick that gives a clean, sharp "L-shaped" bend instead of a
+  single smooth arc.
+- **Peak position** — animates via `useSpring`/`useTransform` so the point slides smoothly to
+  the newly-clicked poster's position rather than jumping.
+- **Clipping gotcha** — the ends looked "clipped by the panel's rounded corners." They
+  weren't: the connector's *own* `<svg>` bounding box was clipping its own path. Fixed with
+  `style={{ overflow: 'visible' }}` plus a taller rendered height (`h-9`) matching the
+  viewBox's `BRACE_BOTTOM` coordinate — not by changing anything on the panel.
+- **Panel outline merges into the brace** — the expansion panel has a `border-clay/60`
+  outline on its sides and bottom only (deliberately no top border), so the brace's stroke
+  color and the panel's outline read as one continuous shape rather than two separate
+  elements touching.

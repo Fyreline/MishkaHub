@@ -133,17 +133,64 @@ current form:
 - **Animations** — both the Cat-alogue's `DetailDrawer` and the new expansion panel now
   fade/slide in and out via `motion`'s `AnimatePresence` instead of popping instantly.
 
-**Known rough edges going into the next round (user-flagged, not yet fixed):**
-- "Watch now" currently links to the film's TMDB watch page, which requires an extra click
-  through to the actual streaming service — the ask is a link that lands as close to directly
-  on the service (ideally the title, realistically a service-side search) as possible.
-- The backdrop-image fade behind the expansion panel's title/synopsis reads fine in most
-  cases but can lose contrast against a busy or light-toned frame, depending on light/dark
-  mode — needs a stronger, theme-aware scrim (darken in dark mode, lighten in light mode)
-  *without* changing the text's own color.
-- The brace connector is a single smooth arc; the ask is a more authentic curly-brace shape
-  (edges dipping down into the panel, a shoulder hump, a tighter/steeper point at the peak)
-  plus a smooth sliding transition when the expanded card changes rather than an instant jump.
+**Resolved from that list, plus further polish (2026-07-04, second checkpoint):**
+- **"Watch now" deep links** — TMDB has no true per-title deep link into a streaming service,
+  so each provider now gets a same-service *search* URL instead of TMDB's own watch page
+  (`PROVIDER_SEARCH_URL` lookup in `FilmDetailSections.tsx`, keyed by TMDB provider ID,
+  verified against the real Netflix/Prime/Mubi/iPlayer/ITVX/Apple TV/STV search endpoints).
+  A true per-title link isn't possible without a paid affiliate API, so this is the practical
+  ceiling — acknowledged with the user as "a good in-between."
+- **Backdrop contrast** — the scrim over the expansion panel's backdrop image was first
+  over-corrected (too dark to see the frame), then tuned down to two soft `color-mix` wash
+  layers plus a theme-aware `textShadow` glow on the title/genre/year text itself (keyed off
+  `--color-paper-mid`, so it auto-adapts light/dark). Genre chips became solid filled pills so
+  they stay legible over any frame; year/runtime/"Wrong film?" text bumped up a shade.
+- **Brace connector** — rebuilt from a user-supplied hand-edited SVG path (real devtools
+  tuning) into a generalized `bracePath(peakPercent)` function using duplicate-control-point
+  bezier corners for a proper curly-brace shape (flat shoulders, a tight point at the peak,
+  ends curling straight down). The apparent "clipping by the panel's rounded corners" turned
+  out to be the connector's *own* SVG bounding box clipping itself — fixed with
+  `overflow: visible` and a taller viewBox/rendered height, not a panel change.
+- **Panel outline merges into the brace** — the expansion panel now has a `border-clay/60`
+  outline on its sides and bottom only (no top border), so the brace visually flows straight
+  into the box instead of the two elements looking separate.
+- **New cat-mark icon** — replaced the old clapperboard mark with a simple two-eared cat-face
+  SVG, used both as the header wordmark icon (`CatMark` in `App.tsx`, theme-aware via
+  `currentColor`/CSS vars) and as `public/cat-icon.svg` (hardcoded colors, since favicons don't
+  get CSS vars) wired into `index.html`. Verified legible down to 16px.
+- **Genre filter bug (real)** — `GET /api/recommendations?genres=...` was matching genres by
+  substring search against the *entire* raw TMDB metadata blob, so e.g. `Animation` matched
+  Okja (no animation genre at all, just the word "animation" somewhere in its overview text).
+  Fixed in `pipeline.py`'s `_passes_filters` to parse the real `genres` array out of
+  `metadata_json` and require every selected genre to be an exact (case-insensitive) match.
+  The Cat-alogue's own genre filter (`films.py`) has the same substring-search pattern but was
+  deliberately left alone — the bug report was specifically about recommendations.
+- **Genre row no longer scrolls** — switched to a smaller `FilterPill` size variant (`size="sm"`)
+  and `flex-wrap` instead of a horizontally-scrolling row, so all 16 genres fit without a scrollbar.
+- **"More like this" opens the full overlay** — clicking a poster inside "more like this" (within
+  the inline recommendation expansion panel) now opens the same `DetailDrawer` overlay used
+  elsewhere in the app, layered on top, instead of replacing the expansion panel's own content.
+  `DetailDrawer` is exported from `Catalogue.tsx` for reuse; `RecommendationExpansionPanel` takes
+  a separate `onOpenOverlay` prop distinct from `onNavigate` (which still drives "Wrong film?"
+  in-place rematching).
+- **Letterboxd CSV export link** — RSS only reliably captures logged/reviewed entries; a plain
+  "mark as watched" tap on Letterboxd doesn't show up there. Added a card on the Settings page
+  linking straight to `https://letterboxd.com/user/exportdata` so the household can periodically
+  re-export and re-import the full, definitive history.
+- **RSS ingestion capability** — `importers/rss.py`'s `poll_user()` gained an `override_items`
+  param and a `parse_feed_text()` helper so already-downloaded RSS XML (e.g. a manually-exported
+  `.rss` file) can be run through the same import path as the live poller, without re-fetching.
+  Used once for real on two manually-provided feed exports — both came back as 0 new items,
+  confirming the live 6-hour scheduler had already caught everything (a correctness check, not a bug).
+
+**Still open, deliberately parked or in progress:**
+- A true per-title streaming deep link (would need a paid affiliate/deep-link API) — search
+  links are the accepted ceiling for now.
+- Documentation/README pass beyond this checkpoint, a "streaming coming soon" tab, an "owned
+  movies" tab (with owned films counting as recommendation candidates), and Jellyfin
+  integration prep are queued as the next round of autonomous work.
+- Vibe-model improvement (possibly folding genre into the vibe scoring itself) is flagged as a
+  larger ask needing its own scoping pass.
 
 **Backlog beyond the current round** (unchanged from the phase table above, restated here for
 one-stop visibility): real per-user accounts/auth (Phase 4, currently an interim bearer token),
