@@ -186,11 +186,22 @@ current form:
 **Still open, deliberately parked or in progress:**
 - A true per-title streaming deep link (would need a paid affiliate/deep-link API) — search
   links are the accepted ceiling for now.
-- Documentation/README pass beyond this checkpoint, a "streaming coming soon" tab, an "owned
-  movies" tab (with owned films counting as recommendation candidates), and Jellyfin
-  integration prep are queued as the next round of autonomous work.
-- Vibe-model improvement (possibly folding genre into the vibe scoring itself) is flagged as a
-  larger ask needing its own scoping pass.
+
+**Resolved in the next round (2026-07-04, third checkpoint):**
+- **Owned movies + Jellyfin prep** shipped as Phase 7 v1 (media indexing/matching/recommender
+  boost verified live; Jellyfin "Play on TV" real but untested against a live server — see
+  [PHASE-7](phases/PHASE-7-local-media-tv.md)).
+- **"Coming soon"** shipped as a Phase 8 v1 subset (theatrical GB release dates only — see
+  [PHASE-8](phases/PHASE-8-coming-soon.md) for why streaming-arrival dates need more
+  infrastructure than this round built).
+- **Vibe filter coverage** — measured near-empty keyword-only coverage (0.1-6.8% per tag on
+  the 5,124-film corpus) and folded genre in as a second OR'd-in signal per the household's own
+  suggestion, lifting coverage to 94.2% of films tagged with at least one vibe. See
+  `recommender/vibes.py`'s module docstring for the measured before/after and the specific
+  genre associations used.
+- **Recommender corpus expansion** — re-ran the full candidate-generation sweep;
+  corpus grew from 3,734 to 5,124 films (+1,390), taste models refit cleanly for both users.
+- README rewritten with real screenshots and an architecture walkthrough.
 
 **Backlog beyond the current round** (unchanged from the phase table above, restated here for
 one-stop visibility): real per-user accounts/auth (Phase 4, currently an interim bearer token),
