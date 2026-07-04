@@ -104,6 +104,7 @@ export interface FilmAvailability {
   fetched_at: string
   attribution: string
   offers: AvailabilityOffer[]
+  owned: boolean
   tmdb_watch_page: string
 }
 
@@ -170,6 +171,7 @@ export interface RecommendationItem {
   film: { id: number; title: string; year: number | null; poster: string | null; runtime_min: number | null }
   score: number
   providers: RecommendationOffer[]
+  owned: boolean
   why: Record<string, number>
 }
 
@@ -480,6 +482,59 @@ export const api = {
       body: JSON.stringify({ subscriptions }),
     }),
   getProviders: (region = 'GB') => get<ProvidersResponse>(`/api/providers${toQuery({ region })}`),
+
+  // Owned media (Phase 7 — docs/phases/PHASE-7-local-media-tv.md)
+  getMedia: () => get<MediaResponse>('/api/media'),
+  getMediaRoots: () => get<MediaRootsResponse>('/api/settings/media'),
+  setMediaRoots: (roots: string[]) =>
+    request<MediaRootsResponse>('/api/settings/media', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roots }),
+    }),
+  scanMedia: () => request<MediaScanResult>('/api/media/scan', { method: 'POST' }),
+  matchMedia: (fileId: number, tmdbId: number) =>
+    request<MediaFileItem>(`/api/media/${fileId}/match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tmdb_id: tmdbId }),
+    }),
+  deleteMedia: (fileId: number) =>
+    request<{ deleted: number }>(`/api/media/${fileId}`, { method: 'DELETE' }),
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Owned local media (docs/phases/PHASE-7-local-media-tv.md)
+// ---------------------------------------------------------------------------
+
+export interface MediaFileItem {
+  id: number
+  path: string
+  size_bytes: number | null
+  jellyfin_item_id: string | null
+  scanned_at: string
+  film: { id: number; title: string; year: number | null; poster: string | null } | null
+}
+
+export interface MediaResponse {
+  total: number
+  matched: number
+  unmatched: number
+  items: MediaFileItem[]
+}
+
+export interface MediaRootsResponse {
+  roots: string[]
+}
+
+export interface MediaScanResult {
+  roots_scanned: string[]
+  files_found: number
+  files_new: number
+  files_removed: number
+  auto_matched: number
+  unmatched: number
+  errors: string[]
 }
 
 export { ApiError }

@@ -83,22 +83,22 @@ def _user_state_block(
     }
 
 
-async def _get_or_hydrate_film(
-    tmdb_id: int, request: Request, session: Session
+async def _get_or_hydrate_film_by_id(
+    tmdb_id: int, tmdb: TMDBClient, session: Session
 ) -> Film:
     """Look up a film locally; if it's not in our library yet, fetch it from
     TMDB (credits/keywords/release_dates appended, same as Phase 2 hydration)
     and upsert it via the shared importers/merge.py logic, then commit.
 
-    Used by both GET /films/{tmdb_id} and GET /films/{tmdb_id}/similar so
-    "search any film -> see full detail / see similar" works even for films
-    the household has never watched or previously searched.
+    `request`-free core of `_get_or_hydrate_film` below, so callers that
+    already hold a `TMDBClient` directly (e.g. the media scanner,
+    importers/media_scan.py) don't need a FastAPI `Request` just to reuse
+    this hydration path.
     """
     film = session.get(Film, tmdb_id)
     if film is not None:
         return film
 
-    tmdb: TMDBClient = request.app.state.tmdb
     try:
         payload = await tmdb.movie(tmdb_id, append="credits,keywords,release_dates")
     except TMDBError as exc:
@@ -111,6 +111,17 @@ async def _get_or_hydrate_film(
     film = upsert_film(session, payload)
     session.commit()
     return film
+
+
+async def _get_or_hydrate_film(
+    tmdb_id: int, request: Request, session: Session
+) -> Film:
+    """Used by both GET /films/{tmdb_id} and GET /films/{tmdb_id}/similar so
+    "search any film -> see full detail / see similar" works even for films
+    the household has never watched or previously searched.
+    """
+    tmdb: TMDBClient = request.app.state.tmdb
+    return await _get_or_hydrate_film_by_id(tmdb_id, tmdb, session)
 
 
 @router.get("")
@@ -534,12 +545,19 @@ async def get_film_availability(
         .limit(1)
     )
 
+    from ..models import MediaFile
+
+    owned = (
+        session.scalar(select(MediaFile.id).where(MediaFile.film_id == tmdb_id)) is not None
+    )
+
     return {
         "film_id": tmdb_id,
         "region": settings.region,
         "fetched_at": fetched_at,
         "attribution": ATTRIBUTION,
         "offers": offers,
+        "owned": owned,
         "tmdb_watch_page": f"https://www.themoviedb.org/movie/{tmdb_id}/watch?locale={settings.region}",
     }
 

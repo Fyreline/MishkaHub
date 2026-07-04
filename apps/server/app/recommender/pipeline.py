@@ -30,7 +30,7 @@ from typing import Callable
 
 from ..availability import dedupe_offers_by_provider, needs_refresh, refresh_film_availability
 from ..clients.tmdb import TMDBClient, TMDBError
-from ..models import Availability, Film, Rating, Subscription, Watch
+from ..models import Availability, Film, MediaFile, Rating, Subscription, Watch
 from .candidates import CandidateGenReport, generate_candidates
 from .scoring import (
     ScoredCandidate,
@@ -152,6 +152,22 @@ def _subscribed_provider_ids(session: Session) -> set[int]:
     return set(
         session.scalars(
             select(Subscription.provider_id).where(Subscription.active == 1)
+        ).all()
+    )
+
+
+def _owned_film_ids(session: Session, film_ids: list[int]) -> set[int]:
+    """Films matched to a local media_files row (PHASE-7 §2) — "you already
+    own your shelf," so these count as available with no streaming service
+    at all, same as the phase doc's "availability boost equal to flatrate."
+    """
+    if not film_ids:
+        return set()
+    return set(
+        session.scalars(
+            select(MediaFile.film_id).where(
+                MediaFile.film_id.in_(film_ids), MediaFile.film_id.is_not(None)
+            )
         ).all()
     )
 
@@ -313,6 +329,16 @@ async def recommend(
         session, tmdb, cand_ids, subscribed_ids, allow_refresh=True
     )
 
+    # Owned films (PHASE-7): count as available regardless of streaming,
+    # with a flatrate-equivalent boost — you already own your shelf. Kept
+    # out of `offers` (real provider dicts flow through
+    # dedupe_offers_by_provider downstream, which requires provider_id/kind)
+    # and surfaced instead as a separate `owned` flag per item.
+    owned_ids = _owned_film_ids(session, cand_ids)
+    for fid in owned_ids:
+        boost[fid] = max(boost.get(fid, 0.0), KIND_BOOST["flatrate"])
+        available.add(fid)
+
     if not include_unavailable:
         candidate_films = [f for f in candidate_films if f.id in available]
     else:
@@ -350,7 +376,10 @@ async def recommend(
 
     scored_by_id = {c.film_id: c for c in scored}
     items = [
-        _item_payload(films_by_id[c.film_id], c, offers.get(c.film_id, []), profile_user_ids)
+        _item_payload(
+            films_by_id[c.film_id], c, offers.get(c.film_id, []), profile_user_ids,
+            owned=c.film_id in owned_ids,
+        )
         for c in page
     ]
     return RecommendResult(
@@ -363,7 +392,8 @@ async def recommend(
 
 
 def _item_payload(
-    film: Film, c: ScoredCandidate, offers: list[dict], profile_user_ids: list[int]
+    film: Film, c: ScoredCandidate, offers: list[dict], profile_user_ids: list[int],
+    *, owned: bool = False,
 ) -> dict:
     from ..clients.tmdb import TMDBClient
 
@@ -390,5 +420,6 @@ def _item_payload(
         },
         "score": round(c.score, 4),
         "providers": offers,
+        "owned": owned,
         "why": why,
     }

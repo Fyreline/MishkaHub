@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # except /api/health.
     dev_token: str = ""
 
+    # --- Jellyfin (PHASE-7 §3 "Play on TV"). Points at a Jellyfin server the
+    # household runs themselves (on a separate desktop, not this machine) —
+    # optional; media features degrade to filename-only matching and a
+    # `jellyfin_not_configured` error on /api/media/play when unset. ---
+    jellyfin_url: str = ""
+    jellyfin_api_key: str = ""
+
     # --- Background sync scheduler (PHASE-2 §4/§11). How often the app's
     # lifespan background task runs the full auto cascade (export -> scrape
     # -> rss, whichever succeeds first) for every user with a

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .auth import require_auth
+from .clients.jellyfin import JellyfinClient
 from .clients.tmdb import TMDBClient
 from .config import get_settings
 from .db import SessionLocal
@@ -26,6 +27,7 @@ from .routers import (
     films,
     health,
     import_,
+    media,
     recommendations,
     settings,
     tmdb,
@@ -124,6 +126,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.settings = settings
     app.state.tmdb = TMDBClient(settings)
+    app.state.jellyfin = JellyfinClient(settings)
     app.state.sync_scheduler_task = asyncio.create_task(_sync_scheduler_loop(app))
     logger.info("lifespan: sync scheduler task started")
     try:
@@ -136,6 +139,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         await app.state.tmdb.aclose()
+        await app.state.jellyfin.aclose()
 
 
 def create_app() -> FastAPI:
@@ -165,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(import_.router, prefix="/api", dependencies=[Depends(require_auth)])
     app.include_router(credentials.router, prefix="/api", dependencies=[Depends(require_auth)])
     app.include_router(settings.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(media.router, prefix="/api", dependencies=[Depends(require_auth)])
     return app
 
 

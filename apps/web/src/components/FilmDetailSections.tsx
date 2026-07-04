@@ -199,6 +199,11 @@ export function WhereToWatchSection({
 
       {!loading && !error && (
         <>
+          {availability?.owned && (
+            <p className="mt-2 flex items-center gap-1.5 rounded-md bg-kraft/20 px-3 py-2 text-sm text-clay-deep">
+              <span aria-hidden>🎞️</span> You own this — indexed from your local shelf.
+            </p>
+          )}
           {streamingOffers.length > 0 ? (
             <ul className="mt-2 space-y-1.5">
               {streamingOffers.map((o) => (
@@ -221,7 +226,9 @@ export function WhereToWatchSection({
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-ink-soft">Not streaming anywhere you have right now.</p>
+            !availability?.owned && (
+              <p className="mt-2 text-sm text-ink-soft">Not streaming anywhere you have right now.</p>
+            )
           )}
         </>
       )}

@@ -13,6 +13,7 @@ import { MovieCard } from './components/MovieCard'
 import { Catalogue, DetailDrawer } from './components/Catalogue'
 import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
+import { OwnedPage } from './components/OwnedPage'
 import {
   FilmHeaderSkeleton,
   MoreLikeThisSection,
@@ -1012,7 +1013,7 @@ function CatMark() {
   )
 }
 
-type View = 'catalogue' | 'settings'
+type View = 'catalogue' | 'owned' | 'settings'
 
 export default function App() {
   const [view, setView] = useState<View>('catalogue')
@@ -1034,6 +1035,28 @@ export default function App() {
               Mishka <span className="text-clay">Hub</span>
             </span>
           </div>
+          <nav className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setView('catalogue')}
+              aria-pressed={view === 'catalogue'}
+              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
+                view === 'catalogue' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+              }`}
+            >
+              Cat-alogue
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('owned')}
+              aria-pressed={view === 'owned'}
+              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
+                view === 'owned' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+              }`}
+            >
+              Owned
+            </button>
+          </nav>
           <div className="flex items-center gap-3">
             <StatusPill health={health} error={healthError} />
             <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
@@ -1045,6 +1068,8 @@ export default function App() {
       <main className="mx-auto max-w-6xl px-5 pb-24 pt-8">
         {view === 'settings' ? (
           <SettingsPage onBack={() => setView('catalogue')} />
+        ) : view === 'owned' ? (
+          <OwnedPage />
         ) : (
           <>
             <div className="pb-8 text-center">
