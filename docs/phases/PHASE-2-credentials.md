@@ -37,28 +37,28 @@ class SecretStore(Protocol):
 
 | Service | Account | Holds | Created by |
 |---|---|---|---|
-| `mishka-hub-letterboxd` | `<letterboxd_username>` — `Luminalmvm`, `garfieldsama` | that member's Letterboxd password | **`Luminalmvm`'s item already exists** (added manually as a generic password). `garfieldsama`'s is added later via the UI (§5) or `security` CLI |
+| `mishka-hub-letterboxd` | `<letterboxd_username>` — `example_user1`, `example_user2` | that member's Letterboxd password | **`example_user1`'s item already exists** (added manually as a generic password). `example_user2`'s is added later via the UI (§5) or `security` CLI |
 | `mishka-hub` | `fernet-master-key` | base64 Fernet key that encrypts the blob files in `data/secrets/` | generated on first use by the app |
 
 Resolution path: `users.letterboxd_username` ([DATA_MODEL.md](../DATA_MODEL.md)) → `SecretStore.get("mishka-hub-letterboxd", username)`. The usernames are seeded from [`config/household.yaml`](../../config/household.yaml), so the app needs no extra mapping table — the Keychain **is** the credentials table, which is why [DATA_MODEL.md](../DATA_MODEL.md) §"Secrets" documents a layout rather than DDL.
 
 ```python
 import keyring  # macOS backend == Keychain (https://pypi.org/project/keyring/)
-password = keyring.get_password("mishka-hub-letterboxd", "Luminalmvm")  # None if absent
+password = keyring.get_password("mishka-hub-letterboxd", "example_user1")  # None if absent
 ```
 
 Equivalent `security` CLI ([man page](https://ss64.com/mac/security.html)) for manual ops:
 
 ```bash
 # inspect (metadata only — add -w to print the secret, avoid in shared terminals):
-security find-generic-password -s mishka-hub-letterboxd -a Luminalmvm
+security find-generic-password -s mishka-hub-letterboxd -a example_user1
 # add the second member's item by hand (prompts for the password):
-security add-generic-password -s mishka-hub-letterboxd -a garfieldsama -w
+security add-generic-password -s mishka-hub-letterboxd -a example_user2 -w
 ```
 
 ### Keychain access grants (the one gotcha)
 
-macOS ACLs Keychain items **per requesting binary**. The first time the Python interpreter reads an item it didn't create (e.g. `Luminalmvm`'s manually added one), macOS shows an *"python wants to use your confidential information…"* dialog. Handle it once, deliberately:
+macOS ACLs Keychain items **per requesting binary**. The first time the Python interpreter reads an item it didn't create (e.g. `example_user1`'s manually added one), macOS shows an *"python wants to use your confidential information…"* dialog. Handle it once, deliberately:
 
 - **Interactive grant (recommended):** run `python -m app.cli secrets check` once in a terminal and click **Always Allow** — this adds the interpreter to the item's ACL permanently.
 - **Pre-authorised creation:** items created via `security add-generic-password … -T /path/to/python` (the *resolved* interpreter binary, not the venv symlink) or by the app itself via `keyring.set_password` need no dialog.
@@ -101,8 +101,8 @@ Automating a member account — for export download *or* write-back — is again
 
 ## 8. Acceptance criteria
 
-- [ ] `keyring.get_password("mishka-hub-letterboxd", "Luminalmvm")` returns the pre-existing manually created secret after a single interactive **Always Allow** grant; subsequent headless (launchd) runs read it without any GUI prompt.
-- [ ] `PUT /api/letterboxd/credentials` for `garfieldsama` (with `acknowledge_tos: true`) creates the Keychain item; the same request without the ack flag on first save returns `403 tos_not_acknowledged`.
+- [ ] `keyring.get_password("mishka-hub-letterboxd", "example_user1")` returns the pre-existing manually created secret after a single interactive **Always Allow** grant; subsequent headless (launchd) runs read it without any GUI prompt.
+- [ ] `PUT /api/letterboxd/credentials` for `example_user2` (with `acknowledge_tos: true`) creates the Keychain item; the same request without the ack flag on first save returns `403 tos_not_acknowledged`.
 - [ ] A grep sweep of the DB file, server logs and API responses after a set/rotate/clear cycle finds no plaintext password (test plants a canary password).
 - [ ] `GET /api/letterboxd/credentials/status` reports `configured`/`tos_acknowledged`/`backend` correctly in all four combinations of item-present × ack-present.
 - [ ] `DELETE /api/letterboxd/credentials` removes the Keychain item **and** the session blob; the next import run's cascade log shows source 1 skipped with `no_credentials`.

@@ -12,9 +12,9 @@ Key facts from docs/phases/PHASE-2-letterboxd-import.md §4 (verified live
   - ``tmdb:movieId`` is handed to us directly for watch/review items — no
     title matching needed for RSS (unlike CSV/scrape).
   - ``letterboxd:memberRating`` is ABSENT (not present as a key at all) when
-    the item is unrated. Confirmed live against garfieldsama's feed.
+    the item is unrated. Confirmed live against example_user2's feed.
   - ``letterboxd:memberLike`` was observed BOTH absent and present-as-"No" in
-    real feeds (garfieldsama's feed included explicit "No" values) — handled
+    real feeds (example_user2's feed included explicit "No" values) — handled
     defensively either way.
   - The feed carries only the ~50 most recent diary/review entries (plus up
     to ~50 list items) — RSS is keep-fresh only, not a backfill source.

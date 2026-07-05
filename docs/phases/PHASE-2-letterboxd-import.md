@@ -94,7 +94,7 @@ run_export(user):
   7. update sync_state cursor {last_sha256, last_success_at}; run 'done' with counts
 ```
 
-- Schedule: weekly per user, staggered (e.g. Sun 03:10 `Luminalmvm`, 03:40 `garfieldsama`) from the FastAPI-lifespan task loop; also on demand via `POST /api/import/letterboxd/run`. Weekly is plenty — RSS (§4) covers the week's activity; the export reconciles edits, old-entry changes and restricted items.
+- Schedule: weekly per user, staggered (e.g. Sun 03:10 `example_user1`, 03:40 `example_user2`) from the FastAPI-lifespan task loop; also on demand via `POST /api/import/letterboxd/run`. Weekly is plenty — RSS (§4) covers the week's activity; the export reconciles edits, old-entry changes and restricted items.
 - Pacing/politeness as Phase 5: random 1–3 s pauses, realistic UA, one user at a time, sessions persisted so `/sign-in` is touched rarely ([PHASE-5 §2](PHASE-5-letterboxd-writeback.md)).
 - ToS note: automating one's own account is against Letterboxd's [terms](https://letterboxd.com/legal/terms-of-use/); accepted, gated per user behind the shared acknowledgement ([PHASE-2-credentials.md §6](PHASE-2-credentials.md)).
 
@@ -313,7 +313,7 @@ The two members' rows share the same `films` table and differ only by `user_id` 
 
 ## 9. Credentials
 
-Everything secret-related — the `SecretStore` abstraction, the macOS Keychain layout (service `mishka-hub-letterboxd`, account = Letterboxd username; `Luminalmvm`'s item already exists), the Fernet file fallback for a future Windows host, encrypted Playwright session blobs, keychain access-grant handling, set/rotate/clear flows, and the shared ToS acknowledgement gate — is specified once in **[PHASE-2-credentials.md](PHASE-2-credentials.md)** and consumed by this phase and [Phase 5](PHASE-5-letterboxd-writeback.md).
+Everything secret-related — the `SecretStore` abstraction, the macOS Keychain layout (service `mishka-hub-letterboxd`, account = Letterboxd username; `example_user1`'s item already exists), the Fernet file fallback for a future Windows host, encrypted Playwright session blobs, keychain access-grant handling, set/rotate/clear flows, and the shared ToS acknowledgement gate — is specified once in **[PHASE-2-credentials.md](PHASE-2-credentials.md)** and consumed by this phase and [Phase 5](PHASE-5-letterboxd-writeback.md).
 
 ## 10. Cat-alogue poster wall UI spec
 
@@ -339,7 +339,7 @@ Route `/films` (SPA). The emotional payoff of Phase 2 — make it feel like a wa
 ## 12. Acceptance criteria
 
 Cascade & sources:
-- [ ] With `Luminalmvm`'s Keychain credential present and ToS acknowledged, `POST /api/import/letterboxd/run {"source":"auto"}` downloads a fresh export ZIP to `data/letterboxd/exports/Luminalmvm/`, parses it, and completes with ≥98 % of rows auto-matched to TMDB ids; counts in the job response reconcile with the CSV line counts.
+- [ ] With `example_user1`'s Keychain credential present and ToS acknowledged, `POST /api/import/letterboxd/run {"source":"auto"}` downloads a fresh export ZIP to `data/letterboxd/exports/example_user1/`, parses it, and completes with ≥98 % of rows auto-matched to TMDB ids; counts in the job response reconcile with the CSV line counts.
 - [ ] Re-running immediately ends `done_unchanged` via the export SHA-256 with zero row changes; re-uploading the same ZIP manually creates **zero** new rows (idempotency proven by counts).
 - [ ] With the Keychain item removed (or a deliberately wrong password), the same trigger records the export failure in `cascade_json` and **falls through to the scrape**, which fills watched films + ratings + likes from `/films/` and dated entries from `/films/diary/` with `source='letterboxd-scrape'`; re-running the scrape is idempotent.
 - [ ] Scrape throttling holds (sequential fetches, ≥1.5 s apart per the 2.5 s ± 1 s jitter in §3c) and a persistent Cloudflare challenge ends the run `failed` with `cloudflare_challenge` — no crash, no partial-row corruption.

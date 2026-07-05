@@ -1,25 +1,28 @@
 # Mishka Hub — household configuration.
-# Human-editable seed for the two members and the streaming services we pay for.
-# Phase 2/4 will load this to seed the database; update it whenever our services change.
+# Human-editable seed for the two members and the streaming services you pay
+# for. `python -m app.cli seed` loads this to seed the database; update it
+# whenever your services change. This file is committed as a template — put
+# your own real Letterboxd usernames in a local, uncommitted copy (or just
+# edit this file locally and don't commit the change) rather than in the
+# version that ships in the repo.
 
-region: GB          # UK
+region: GB          # regional TMDB/JustWatch catalogue + release-date locale
 language: en-GB
-locale_note: Scotland (STV rather than ITV as the regional broadcaster)
 
 users:
-  - id: luminal
-    display_name: Luminal
-    letterboxd_username: Luminalmvm   # this is me
+  - id: primary
+    display_name: Primary
+    letterboxd_username: your-letterboxd-username
     primary: true
     accent: clay                       # per DESIGN.md user-identity colours
-  - id: garfield
-    display_name: Garfield
-    letterboxd_username: garfieldsama
+  - id: partner
+    display_name: Partner
+    letterboxd_username: partner-letterboxd-username
     primary: false
     accent: sky
 
-# Streaming services / TV channels we subscribe to.
-# tmdb_provider_id = TMDB (JustWatch) provider id for region GB, resolved 2026-07-03.
+# Streaming services / TV channels you subscribe to.
+# tmdb_provider_id = TMDB (JustWatch) provider id for your region, resolved 2026-07-03.
 subscriptions:
   - name: Netflix
     tmdb_provider_id: 8
@@ -28,9 +31,9 @@ subscriptions:
   - name: BBC iPlayer
     tmdb_provider_id: 38
   - name: ITVX
-    tmdb_provider_id: 41            # ITV's streaming app (free)
+    tmdb_provider_id: 41            # ITV's streaming app (free, England/Wales)
   - name: STV Player
-    tmdb_provider_id: 593           # Scotland's ITV equivalent (free)
+    tmdb_provider_id: 593           # STV's equivalent (free, Scotland)
   - name: Apple TV+
     tmdb_provider_id: 350
   - name: MUBI

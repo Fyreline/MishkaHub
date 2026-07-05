@@ -1,10 +1,10 @@
 """Password hashing + JWT access tokens + opaque refresh tokens.
 
 docs/phases/PHASE-4-accounts-feedback.md §2-3. Two, and only two, accounts
-exist (Mack and Amy) — there is no HTTP path anywhere in this codebase that
-creates a user or sets a password; that's done once via
-`scripts/set_password.py`, run locally on the household's own machine, so a
-password never has to be typed into (or seen by) anything else.
+exist — there is no HTTP path anywhere in this codebase that creates a user
+or sets a password; that's done once via `scripts/set_password.py`, run
+locally on the household's own machine, so a password never has to be typed
+into (or seen by) anything else.
 """
 from __future__ import annotations
 

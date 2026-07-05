@@ -302,7 +302,7 @@ There is no credentials table. Letterboxd passwords and the Fernet master key li
 
 | Store | Location | Item | Holds |
 |---|---|---|---|
-| Keychain (generic password) | macOS login keychain, via [`keyring`](https://pypi.org/project/keyring/) | service `mishka-hub-letterboxd`, account `<letterboxd_username>` (`Luminalmvm`, `garfieldsama`) | that member's Letterboxd password |
+| Keychain (generic password) | macOS login keychain, via [`keyring`](https://pypi.org/project/keyring/) | service `mishka-hub-letterboxd`, account `<letterboxd_username>` (`example_user1`, `example_user2`) | that member's Letterboxd password |
 | Keychain (generic password) | macOS login keychain | service `mishka-hub`, account `fernet-master-key` | Fernet key encrypting the blob files below |
 | File ([Fernet](https://cryptography.io/en/latest/fernet/) ciphertext) | `data/secrets/letterboxd_session_<user_id>.enc` | — | Playwright `storage_state` (login-session cookies) |
 | File (Fernet ciphertext, fallback backend only) | `data/secrets/secrets.enc` | JSON map `{service: {account: secret}}` | all of the above on a keychain-less host (future Windows desktop), key from env `MISHKA_SECRETS_KEY` |
