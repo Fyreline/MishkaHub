@@ -228,7 +228,15 @@ function FilterBar({
   )
 
   return (
-    <div className="sticky top-[65px] z-10 -mx-5 border-y border-line bg-paper/95 px-5 py-3 backdrop-saturate-150">
+    <div
+      className="sticky z-10 -mx-5 border-y border-line bg-paper/95 px-5 py-3 backdrop-saturate-150"
+      // Reads the header's live measured height (App.tsx sets this custom
+      // property via ResizeObserver) rather than a hardcoded pixel guess —
+      // the header is a different height on mobile (two rows) vs desktop
+      // (one row), and collapses further on mobile scroll-down, so a fixed
+      // number here always drifted out of sync with one of those states.
+      style={{ top: 'var(--app-header-h, 65px)' }}
+    >
       {/* Mobile layout (< sm): always-visible user toggle + search, rest
           behind a "Filters" disclosure. Hidden entirely at sm:+ in favour of
           the always-expanded desktop row below. */}

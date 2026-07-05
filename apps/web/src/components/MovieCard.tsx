@@ -114,8 +114,8 @@ export function MovieCard({
       <button
         type="button"
         onClick={onClick}
-        className={`group relative aspect-2/3 w-full overflow-hidden rounded-sm border bg-paper-mid text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 ${
-          expanded ? 'border-ink ring-2 ring-ink' : 'border-line'
+        className={`group relative aspect-2/3 w-full overflow-hidden border bg-paper-mid text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 ${
+          expanded ? 'rounded-t-sm rounded-b-xl border-ink ring-2 ring-ink' : 'rounded-sm border-line'
         }`}
       >
         <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
@@ -139,15 +139,22 @@ export function MovieCard({
         scale,
         touchAction: 'pan-y',
       }}
-      className={`group relative z-0 aspect-2/3 w-full origin-center overflow-hidden rounded-sm border bg-paper-mid text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10 ${
-        expanded ? 'border-ink ring-2 ring-ink' : 'border-line'
+      className={`group relative z-0 aspect-2/3 w-full origin-center overflow-hidden border bg-paper-mid text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10 ${
+        // Bottom corners bend into a wider curve (matching the expansion
+        // panel's own rounded-b-xl) instead of the default tight rounded-sm
+        // corner, so the poster's own outline visibly bends to meet the
+        // brace connector's curve below it rather than a sharp corner
+        // butting up against a smooth one.
+        expanded ? 'rounded-t-sm rounded-b-xl border-ink ring-2 ring-ink' : 'rounded-sm border-line'
       }`}
     >
       <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
       <motion.span
         aria-hidden
         style={{ opacity: shadowOpacity }}
-        className="pointer-events-none absolute inset-0 -z-10 rounded-sm shadow-[var(--shadow-poster-drag)]"
+        className={`pointer-events-none absolute inset-0 -z-10 shadow-[var(--shadow-poster-drag)] ${
+          expanded ? 'rounded-t-sm rounded-b-xl' : 'rounded-sm'
+        }`}
       />
     </motion.button>
   )

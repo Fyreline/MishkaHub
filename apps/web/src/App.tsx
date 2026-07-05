@@ -671,8 +671,13 @@ function RecommendationExpansionPanel({
       // poster's ring, per the household's reference sketch (thick dark
       // outline, not the app's clay accent) — poster → connector → box reads
       // as one continuous solid dark shape rather than three separate
-      // elements.
-      className="relative overflow-hidden rounded-xl border-x-2 border-b-2 border-ink bg-paper-mid p-4 sm:p-6"
+      // elements. Top corners deliberately square (rounded-b-xl, not
+      // rounded-xl): the brace's fill/stroke above this panel has a flat,
+      // square-cornered bottom edge (BRACE_BOTTOM), so rounding the panel's
+      // top corners left a sliver of background peeking through at each
+      // corner where the round curve pulled away from the brace's square
+      // edge — squaring them off makes the two flush, no seam.
+      className="relative overflow-hidden rounded-b-xl border-x-2 border-b-2 border-ink bg-paper-mid p-4 sm:p-6"
     >
       <button
         type="button"
@@ -1078,7 +1083,15 @@ function UnseenRecommendationsRow() {
 
         {!loading && !error && visible.length > 0 && (
           <div
-            className="grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
+            // `relative z-10`: the brace connector below deliberately overshoots
+            // a little past full height on landing (the "liquid wobble" —
+            // BraceConnector's `tooth` briefly exceeds 1), which pokes its tip
+            // above its own box for an instant. Without this, that instant
+            // painted over the bottom of the poster row (later DOM = later
+            // paint, same as any unstacked siblings) — a visible flash of the
+            // dark connector on top of the artwork. Stacking the row above it
+            // means any overshoot is simply hidden behind the posters instead.
+            className="relative z-10 grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
             style={{ perspective: '800px' }}
           >
             {visible.map((item, index) => (
@@ -1273,46 +1286,99 @@ function AuthenticatedApp() {
     api.health().then(setHealth).catch((e) => setHealthError(String(e)))
   }, [])
 
+  // Below `sm`, the header is two rows (wordmark+controls, then nav tabs) —
+  // tall enough that Catalogue's own sticky filter bar (which sticks right
+  // under this header) needs real breathing room below it. Collapsing row 1
+  // away on scroll-down (row 2's tabs stay put, just slide up to take its
+  // place) buys that room back instead of stacking two sticky bars' full
+  // height permanently. `--app-header-h` is measured live off the actual
+  // header element (rather than assumed) so Catalogue's sticky offset never
+  // drifts out of sync with whatever height the header currently is.
+  const headerRef = useRef<HTMLElement>(null)
+  const [collapseTopBar, setCollapseTopBar] = useState(false)
+  const lastScrollY = useRef(0)
+
+  useEffect(() => {
+    function onScroll() {
+      const y = window.scrollY
+      const delta = y - lastScrollY.current
+      if (y <= 12) {
+        setCollapseTopBar(false)
+      } else if (delta > 4) {
+        setCollapseTopBar(true)
+      } else if (delta < -4) {
+        setCollapseTopBar(false)
+      }
+      lastScrollY.current = y
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      document.documentElement.style.setProperty('--app-header-h', `${entry.contentRect.height}px`)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   return (
     <div className="min-h-full bg-paper text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-paper/95">
+      <header ref={headerRef} className="sticky top-0 z-20 border-b border-line bg-paper/95">
         <div className="mx-auto max-w-6xl px-5 py-3 sm:py-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex shrink-0 items-center gap-2.5">
-              <CatMark />
-              <span className="font-display text-lg font-medium tracking-[-0.005em]">
-                Mishka <span className="text-clay">Hub</span>
-              </span>
-            </div>
-            {/* Desktop/tablet: tabs sit inline, centered between the wordmark
-                and the controls. Below `sm`, there's not enough width for
-                logo + 4 tabs + 4 controls on one line without either
-                truncating text or squeezing the tabs down to nothing — so
-                they move to their own full-width row instead (below). */}
-            <nav className="hidden items-center gap-1 sm:flex">
-              {NAV_TABS.map((tab) => (
-                <button
-                  key={tab.view}
-                  type="button"
-                  onClick={() => setView(tab.view)}
-                  aria-pressed={view === tab.view}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                    view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
-              <ThemeToggle />
-              <SignOutButton onClick={logout} />
+          {/* Row 1 (wordmark + desktop nav + controls) collapses to nothing
+              on mobile scroll-down via the grid-rows 1fr/0fr trick (animates
+              cleanly without knowing the row's pixel height up front) — the
+              `sm:grid-rows-[1fr]` override means desktop never collapses it,
+              since the desktop single-row header doesn't have the height
+              problem this is solving. */}
+          <div
+            className={`grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out sm:grid-rows-[1fr] ${
+              collapseTopBar ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 pb-3 sm:pb-0">
+                <div className="flex shrink-0 items-center gap-2.5">
+                  <CatMark />
+                  <span className="font-display text-lg font-medium tracking-[-0.005em]">
+                    Mishka <span className="text-clay">Hub</span>
+                  </span>
+                </div>
+                {/* Desktop/tablet: tabs sit inline, centered between the wordmark
+                    and the controls. Below `sm`, there's not enough width for
+                    logo + 4 tabs + 4 controls on one line without either
+                    truncating text or squeezing the tabs down to nothing — so
+                    they move to their own full-width row instead (below). */}
+                <nav className="hidden items-center gap-1 sm:flex">
+                  {NAV_TABS.map((tab) => (
+                    <button
+                      key={tab.view}
+                      type="button"
+                      onClick={() => setView(tab.view)}
+                      aria-pressed={view === tab.view}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                        view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </nav>
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                  <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
+                  <ThemeToggle />
+                  <SignOutButton onClick={logout} />
+                </div>
+              </div>
             </div>
           </div>
           {/* Mobile-only second row: full viewport width to scroll within,
               rather than fighting the logo/controls for leftover space. */}
-          <nav className="-mx-5 mt-2 flex items-center gap-1 overflow-x-auto px-5 sm:hidden">
+          <nav className="-mx-5 flex items-center gap-1 overflow-x-auto px-5 sm:hidden">
             {NAV_TABS.map((tab) => (
               <button
                 key={tab.view}
