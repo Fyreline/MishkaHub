@@ -32,9 +32,10 @@ export function MovieCard({
    * solid ink halo behind/around the poster (the top "bulb" of the liquid
    * shape), so the poster reads as sitting comfortably in the same dark
    * backdrop that pinches down through App.tsx's LiquidConnector neck into
-   * the detail panel's mat. The halo's side padding must stay in step with
-   * HALO_PAD there (8px == -inset-x-2), and it overhangs the poster's bottom
-   * edge so it merges into the neck with no seam. */
+   * the detail panel's mat. The halo's side padding and corner radius must
+   * stay in step with HALO_PAD (8px == -inset-x-2) and HALO_CORNER (12px ==
+   * rounded-xl) there; the neck tucks up behind the halo's solid lower reach
+   * so the two fills merge with no seam. */
   expanded?: boolean
 }) {
   const rating = badges?.myRating != null
@@ -118,7 +119,12 @@ export function MovieCard({
         onClick={onClick}
         className="group relative block aspect-2/3 w-full rounded-sm text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2"
       >
-        {expanded && <span aria-hidden className="absolute -inset-x-2 -top-2 -bottom-1.5 rounded-t-xl bg-ink" />}
+        {expanded && (
+          <span
+            aria-hidden
+            className="absolute -inset-x-2 -top-2 bottom-0 rounded-xl bg-gradient-to-t from-ink from-35% to-transparent"
+          />
+        )}
         <div
           className={`relative h-full w-full overflow-hidden rounded-sm border bg-paper-mid ${
             expanded ? 'border-ink' : 'border-line'
@@ -148,17 +154,22 @@ export function MovieCard({
       }}
       className="group relative z-0 block aspect-2/3 w-full origin-center rounded-sm text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10"
     >
-      {/* The halo — extends past the poster's sides/top and overhangs its
-          bottom edge into the connector svg below, so the two same-color
-          fills merge with no visible seam. Rendered before the (positioned)
-          content wrapper so document order keeps it underneath. */}
+      {/* The halo — extends past the poster's sides and top, dissolving into
+          the page background toward the top (solid only in its lower reach,
+          where the neck tucks up behind it — the gradient must still be
+          fully opaque there or the seam shows through). Its rounded-xl
+          bottom corners are load-bearing: the neck's top opening starts
+          exactly where the corner arc turns horizontal (HALO_CORNER in
+          App.tsx), so silhouette-wise the corner flows straight into the
+          neck's curve. Rendered before the (positioned) content wrapper so
+          document order keeps it underneath. */}
       {expanded && (
         <motion.span
           aria-hidden
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.15 }}
-          className="absolute -inset-x-2 -top-2 -bottom-1.5 rounded-t-xl bg-ink"
+          className="absolute -inset-x-2 -top-2 bottom-0 rounded-xl bg-gradient-to-t from-ink from-35% to-transparent"
         />
       )}
       <div

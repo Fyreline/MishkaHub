@@ -452,56 +452,93 @@ function FilterPill({
 // with preserveAspectRatio="none" distorted curves and made edge-poster
 // centering a constant fight.
 // ---------------------------------------------------------------------------
-const NECK_H = 44 // px height of the neck region between poster row and mat
+const NECK_H = 48 // px height of the neck region between poster row and mat
 const HALO_PAD = 8 // how far the halo extends past the poster's sides; must match MovieCard's -inset-x-2
+const HALO_CORNER = 12 // the halo's corner radius; must match MovieCard's rounded-xl
 const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
+const NECK_TOP_OVERLAP = 6 // how far the neck tucks up under the halo's solid base (behind poster + halo)
+const NECK_TOUCH = 0.5 // grow value at which the two menisci meet mid-air
 
-/** `grow` is how formed the neck is, 0..~1.2: 0 = fully melted flat into the
- * mat (while the old connection detaches, or before a new one rises), 1 =
- * resting shape, >1 = a springy overshoot poking up behind the poster halo
- * (hidden there — same color, and the grid stacks above). The waist pinch
- * and bottom flare both scale with growth, so the neck rises as a column and
- * relaxes into the hourglass as it lands. */
+/** `grow` is how formed the connection is, 0..~1.2. Below NECK_TOUCH the
+ * shape is two separate menisci — one clinging under the poster's halo, one
+ * pooled on the mat — reaching toward (or pulling away from) each other,
+ * the liquid-glass "one button becoming two" beat. At NECK_TOUCH they meet
+ * mid-air; above it they're merged into a single hourglass whose slim waist
+ * thickens toward 1 (and a touch past it on the landing overshoot, which
+ * reads as a wobble).
+ *
+ * Every end of every curve is tangent to the straight edge it leaves or
+ * lands on: horizontal off the halo's underside, horizontal onto the mat's
+ * top edge, vertical through the waist — so the shape always fits flush
+ * against the flat lines instead of meeting them at an angle. The neck's
+ * top opening starts HALO_CORNER inside the halo's sides, exactly where the
+ * halo's rounded bottom corner finishes turning horizontal, so the halo's
+ * corner arc flows straight into the neck's curve with no notch. */
 function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: number): string {
   const t = Math.max(0, Math.min(1.2, growRaw))
-  const reach = Math.min(t, 1)
-  const topHW = posterW / 2 + HALO_PAD // neck top half-width == halo half-width
-  const topY = NECK_H * (1 - t)
-  const bottomY = NECK_H + 2 // draw 2px into the mat so the seam can't anti-alias into a hairline
-  const pinch = Math.min(10, topHW * 0.25) * reach // waist inset — the liquid-glass "held together" squeeze
-  const flare = (26 + topHW * 0.3) * reach // how far the base spreads as it merges into the mat
-  const leftTop = centerX - topHW
-  const rightTop = centerX + topHW
-  // Clamp the base inside the mat's rounded corners; for edge posters the
-  // near side simply lands closer to (or leans back from) the halo above it.
-  const leftBottom = Math.max(leftTop - flare, MAT_RADIUS)
-  const rightBottom = Math.min(rightTop + flare, rowW - MAT_RADIUS)
-  const midY = topY + (bottomY - topY) * 0.5
+  const topHW = Math.max(12, posterW / 2 + HALO_PAD - HALO_CORNER)
+  const topY = -NECK_TOP_OVERLAP
+  const botY = NECK_H + 2 // draw 2px into the mat so the seam can't anti-alias into a hairline
+  const midY = NECK_H * 0.5
+  // Bottom landing: symmetric about the poster's center, shrunk to whatever
+  // room the nearest mat corner leaves — so end posters get the same
+  // hourglass as middle ones, just a touch narrower, instead of one side
+  // bending in toward the middle of the row.
+  const flare = 20 + topHW * 0.25
+  const botHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS, rowW - MAT_RADIUS - centerX), 24)
+  const leftT = centerX - topHW
+  const rightT = centerX + topHW
+  const leftB = centerX - botHW
+  const rightB = centerX + botHW
+
+  if (t < NECK_TOUCH) {
+    // Separated: two rounded menisci, bases hidden under the halo / inside
+    // the mat, tips reaching toward the midline.
+    const u = t / NECK_TOUCH
+    const upperTip = topY + u * (midY - topY)
+    const lowerTip = botY - u * (botY - midY)
+    return [
+      `M${leftT},${topY}`,
+      `C${leftT + (centerX - leftT) * 0.45},${topY} ${leftT + (centerX - leftT) * 0.85},${upperTip} ${centerX},${upperTip}`,
+      `C${rightT - (rightT - centerX) * 0.85},${upperTip} ${rightT - (rightT - centerX) * 0.45},${topY} ${rightT},${topY}`,
+      'Z',
+      `M${leftB},${botY}`,
+      `C${leftB + (centerX - leftB) * 0.45},${botY} ${leftB + (centerX - leftB) * 0.85},${lowerTip} ${centerX},${lowerTip}`,
+      `C${rightB - (rightB - centerX) * 0.85},${lowerTip} ${rightB - (rightB - centerX) * 0.45},${botY} ${rightB},${botY}`,
+      'Z',
+    ].join(' ')
+  }
+
+  // Merged: the full hourglass, waist thickening with s.
+  const s = Math.min((t - NECK_TOUCH) / (1 - NECK_TOUCH), 1.12)
+  const waistBase = Math.min(Math.max(topHW * 0.52, 14), 40)
+  const w = Math.max(0.5, Math.min(waistBase * s, botHW - 4, topHW - 3))
   return [
-    `M${leftTop},${topY}`,
-    // Sides start near-vertical under the halo, bow inward at the waist,
-    // then land horizontal on the mat — concave the whole way down, which is
-    // what makes it read as liquid rather than a funnel.
-    `C${leftTop + pinch},${midY} ${leftBottom + (leftTop - leftBottom) * 0.35},${bottomY} ${leftBottom},${bottomY}`,
-    `L${rightBottom},${bottomY}`,
-    `C${rightBottom - (rightBottom - rightTop) * 0.35},${bottomY} ${rightTop - pinch},${midY} ${rightTop},${topY}`,
+    `M${leftT},${topY}`,
+    `C${leftT + (centerX - w - leftT) * 0.6},${topY} ${centerX - w},${(topY + midY) * 0.5} ${centerX - w},${midY}`,
+    `C${centerX - w},${midY + (botY - midY) * 0.5} ${leftB + (centerX - w - leftB) * 0.55},${botY} ${leftB},${botY}`,
+    `L${rightB},${botY}`,
+    `C${rightB - (rightB - (centerX + w)) * 0.55},${botY} ${centerX + w},${midY + (botY - midY) * 0.5} ${centerX + w},${midY}`,
+    `C${centerX + w},${(topY + midY) * 0.5} ${rightT - (rightT - (centerX + w)) * 0.6},${topY} ${rightT},${topY}`,
     'Z',
   ].join(' ')
 }
 
 /** The connector's "switching posters" choreography, driven by the row below:
  * steady → snap (the old connection detaches AT ITS OWN OLD POSITION — no
- * lean toward the new poster first — the neck melts flat into the mat and a
- * droplet falls straight down) → form (the connector jumps, with zero
- * horizontal animation, to the new poster's position and rises from flat to
- * full height, joining the poster's halo) → steady. There is deliberately no
- * interpolation between the old x and the new x at any point — the household
- * was explicit that switching posters should never read as sliding sideways,
- * only detach-in-place then reform fresh elsewhere. Timings are exported to
- * the row so its setTimeout sequencing and the animations here can never
- * drift apart. */
+ * lean toward the new poster first — the waist thins, splits, and the two
+ * menisci pull away into the halo above and the mat below while a droplet
+ * falls through the gap) → form (the connector jumps, with zero horizontal
+ * animation, to the new poster's position and runs the same beat in reverse:
+ * two menisci reach, touch, merge) → steady. Every transition is that one
+ * separate/merge move, just at different speeds and directions. There is
+ * deliberately no interpolation between the old x and the new x at any
+ * point — the household was explicit that switching posters should never
+ * read as sliding sideways, only detach-in-place then reform fresh
+ * elsewhere. Timings are exported to the row so its setTimeout sequencing
+ * and the animations here can never drift apart. */
 type ConnectorPhase = 'steady' | 'snap' | 'form'
-const SWITCH_SNAP_MS = 150
+const SWITCH_SNAP_MS = 200
 const SWITCH_FORM_MS = 380
 
 /** The hourglass neck between the expanded poster's halo and the panel's mat
@@ -535,7 +572,8 @@ function LiquidConnector({
     }
     if (phase === 'snap') {
       // Old connection detaches right where it already was — no horizontal
-      // motion at all — the neck just melts back into the mat, tension released.
+      // motion at all — the waist splits and both menisci pull away, one up
+      // into the halo, one down into the mat, tension released.
       const anim = animate(grow, 0, { duration: SWITCH_SNAP_MS / 1000, ease: [0.7, 0, 0.85, 0.4] })
       return () => anim.stop()
     }
@@ -568,8 +606,10 @@ function LiquidConnector({
           aria-hidden
           className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-ink"
           style={{ left: centerX, x: '-50%' }}
-          initial={{ y: 4, opacity: 0.9, scale: 1 }}
-          animate={{ y: 30, opacity: 0, scale: 0.5 }}
+          // Falls from the waist — where the liquid actually separates —
+          // down into the mat, not from under the poster.
+          initial={{ y: NECK_H * 0.4, opacity: 0.9, scale: 1 }}
+          animate={{ y: NECK_H + 2, opacity: 0, scale: 0.5 }}
           transition={{ duration: 0.32, ease: 'easeIn' }}
         />
       )}
