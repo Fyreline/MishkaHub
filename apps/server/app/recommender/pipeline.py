@@ -469,6 +469,14 @@ def _item_payload(
 SERVICE_INSIGHTS_TOP_N = 150
 SERVICE_INSIGHTS_FILMS_PER_SERVICE = 8
 
+# Free UK catch-up broadcasters (docs/phases/PHASE-6-service-optimisation.md
+# §3's "no-op" rule: these are never drop-suggested, cost being the whole
+# point of a "worth dropping" call). No `subscriptions.monthly_cost_pence`
+# data has actually been entered by the household (all NULL as of
+# 2026-07-05), so this is a hardcoded id list rather than a `cost > 0`
+# filter — these four are objectively free in the UK regardless.
+FREE_UK_BROADCAST_PROVIDER_IDS = {38, 41, 103, 593}  # BBC iPlayer, ITVX, Channel 4, STV Player
+
 
 async def service_insights(
     session: Session, tmdb: TMDBClient, *, profile: str = "together"
@@ -598,6 +606,8 @@ async def service_insights(
 
     drop = []
     for pid in subscribed_ids:
+        if pid in FREE_UK_BROADCAST_PROVIDER_IDS:
+            continue  # "drop" is meaningless for a service that costs nothing
         name, logo = _provider_name_logo(pid)
         films = unique_films_by_provider.get(pid, [])
         drop.append({

@@ -320,8 +320,8 @@ Credential endpoints already exist from Phase 2 (see §Phase 2 — Letterboxd cr
 | `GET /api/settings/subscriptions` | household service list |
 | `PUT /api/settings/subscriptions` | replace list |
 | `GET /api/providers?region=GB` | full TMDB provider catalogue for pickers (cached daily) |
-| `GET /api/settings/region` / `PUT` | region + language (defaults GB / en-GB) |
-| `GET /api/insights/services` | Phase 6 subscribe/drop suggestions |
+| `GET /api/settings/region` / `PUT` | region + language (defaults GB / en-GB) — **not implemented**, region/language are still `.env`-only settings (`MISHKA_REGION`/`MISHKA_LANGUAGE`), no HTTP endpoint |
+| `GET /api/insights/services?profile=together` | **shipped (2026-07-05)** — subscribe/drop suggestions, see [PHASE-6](phases/PHASE-6-service-optimisation.md) |
 
 ```json
 // PUT /api/settings/subscriptions
@@ -333,8 +333,25 @@ Credential endpoints already exist from Phase 2 (see §Phase 2 — Letterboxd cr
   { "provider_id": 593, "monthly_cost_pence": 0 } ] }
 // → 200 echoes with names/logos resolved from the provider catalogue
 
-// GET /api/insights/services → see PHASE-6 doc for full example
+// GET /api/insights/services?profile=together
+{ "profile": "together", "attribution": "Streaming availability by JustWatch",
+  "add": [ { "provider_id": 1899, "provider_name": "HBO Max", "logo": "https://…",
+             "unlocked_count": 10,
+             "films": [ { "id": 157336, "title": "Interstellar", "year": 2014,
+                          "poster": "https://…", "score": 0.7586 }, "…7 more" ] },
+           "…more services, sorted by unlocked_count desc" ],
+  "drop": [ { "provider_id": 9, "provider_name": "Amazon Video", "logo": "https://…",
+              "exclusive_count": 0, "films": [] },
+            "…more services, sorted by exclusive_count asc (least value first)" ] }
 ```
+
+Ranking method (see `pipeline.service_insights`'s docstring for the full explanation): the top
+150 unwatched candidates are scored by the same taste model `/recommendations` uses, but with
+`availability_boost` held at zero for every candidate — every film gets the same (zero) offset,
+so relative ranking reflects taste/quality/novelty alone, independent of whether it's
+streamable anywhere. `add` credits a service only for films not already reachable via a
+subscribed service; `drop` counts films reachable ONLY via that one subscribed service among
+the household's current subscriptions.
 
 ---
 
