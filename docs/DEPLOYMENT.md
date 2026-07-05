@@ -2,10 +2,30 @@
 
 Purpose: the runbook for putting Mishka Hub in production and keeping it there: GitHub Pages for the SPA, Cloudflare Tunnel + launchd for the Mac-hosted API, CORS wiring between the two, and SQLite backups. Written to be executed top-to-bottom on a fresh setup and consulted piecemeal later. Topology rationale: [ARCHITECTURE.md](ARCHITECTURE.md) §4.
 
-**Status: §1 (Pages workflow) shipped 2026-07-05 — real `.github/workflows/deploy-web.yml` in
-the repo, not just this sketch. §2-§4 (Cloudflare Tunnel, launchd service, backups) are still
-this doc's plan, not yet executed on the household's Mac — those need the household's own
-Cloudflare account/domain and can't be done from an assistant session.**
+**Status: §1-§3 all live in production as of 2026-07-05.** The repo is public (audited clean —
+no secrets ever committed, in full git history, not just current files); Pages serves
+`https://fyreline.github.io/MishkaHub/`; the domain is `mishka-hub.com` (real, owned by the
+household); the tunnel and the API are both running as persistent services on the household
+Mac. Verified end-to-end: a real `POST /api/auth/login` through the public URL, through
+Cloudflare, through the tunnel, to the local FastAPI process, returns a valid token. §4
+(nightly backups) is still ⬜ not set up.
+
+**Two real gotchas hit during setup, worth knowing before repeating this:**
+1. `sudo cloudflared service install` on this machine wrote a `/Library/LaunchDaemons/com.cloudflare.cloudflared.plist`
+   with **no `ProgramArguments` beyond the bare binary** — it did not automatically point at
+   `~/.cloudflared/config.yml`. Fixed by hand-writing the plist with explicit
+   `--config /Users/mack/.cloudflared/config.yml tunnel run` arguments, then
+   `sudo launchctl unload`/`load` to pick it up. Check `ProgramArguments` in the installed plist
+   before assuming the service will actually find your tunnel config.
+2. A `LaunchAgent` (no `sudo`, runs as the logged-in user) invoking the venv's Python to serve
+   `apps/server` crashed with `PermissionError: ... .venv/pyvenv.cfg` — macOS's TCC privacy
+   protection blocks background/launchd-spawned processes from reading `~/Documents/**` even
+   though an interactive Terminal session can. Fixed by granting **Full Disk Access** (System
+   Settings → Privacy & Security → Full Disk Access) to the actual Python binary
+   (`/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`, found by resolving the
+   venv's `python3` symlink) — not to Terminal, since launchd doesn't spawn through Terminal at
+   all. If a launchd-managed process under this repo's path mysteriously can't read its own
+   files, check this first.
 
 ---
 
