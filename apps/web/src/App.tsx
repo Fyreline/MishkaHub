@@ -15,6 +15,8 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
 import { OwnedPage } from './components/OwnedPage'
 import { UpcomingPage } from './components/UpcomingPage'
+import { LoginScreen } from './components/LoginScreen'
+import { bootstrap, getUser, logout, subscribe, type AuthUser } from './auth'
 import {
   FilmHeaderSkeleton,
   MoreLikeThisSection,
@@ -999,6 +1001,29 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+function SignOutButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Sign out"
+      title="Sign out"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-line-strong bg-white text-ink-mid transition hover:bg-oat hover:text-ink dark:bg-paper-mid"
+    >
+      <svg viewBox="0 0 20 20" aria-hidden className="h-4 w-4">
+        <path
+          d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M13 13.5 16.5 10 13 6.5M7 10h9.3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  )
+}
+
 /** A small, tasteful cat-ear mark next to the wordmark — not an emoji, part of the brand. */
 function CatMark() {
   return (
@@ -1016,7 +1041,34 @@ function CatMark() {
 
 type View = 'catalogue' | 'owned' | 'upcoming' | 'settings'
 
+/** Gates the whole app behind the two-person login (docs/phases/PHASE-4-accounts-feedback.md).
+ * `bootstrap()` tries a silent refresh from a stored refresh token on first
+ * mount so a page reload doesn't force a re-login; `subscribe()` re-renders
+ * this the moment auth state changes (login, logout, or a forced logout
+ * from api.ts when a session dies server-side). */
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(getUser())
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const unsubscribe = subscribe(() => setUser(getUser()))
+    bootstrap().finally(() => {
+      setUser(getUser())
+      setReady(true)
+    })
+    return unsubscribe
+  }, [])
+
+  if (!ready) {
+    return <div className="min-h-full bg-paper" />
+  }
+  if (!user) {
+    return <LoginScreen onLoggedIn={() => setUser(getUser())} />
+  }
+  return <AuthenticatedApp />
+}
+
+function AuthenticatedApp() {
   const [view, setView] = useState<View>('catalogue')
   const [health, setHealth] = useState<Health | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
@@ -1072,6 +1124,7 @@ export default function App() {
             <StatusPill health={health} error={healthError} />
             <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
             <ThemeToggle />
+            <SignOutButton onClick={logout} />
           </div>
         </div>
       </header>

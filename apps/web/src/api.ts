@@ -1,3 +1,5 @@
+import { forceLogout, getValidAccessToken } from './auth'
+
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
 
 export interface Health {
@@ -351,18 +353,31 @@ async function parseErrorBody(res: Response): Promise<{ detail: string; code?: s
   return { detail, code }
 }
 
-// Interim bearer-token guard (docs/API.md closing note) — every endpoint
-// except /api/health requires this until Phase 4 JWTs replace it.
-const DEV_TOKEN = import.meta.env.VITE_DEV_TOKEN ?? ''
+async function doFetch(path: string, init: RequestInit, accessToken: string | null): Promise<Response> {
+  const headers = new Headers(init.headers)
+  if (accessToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
+  return fetch(`${BASE}${path}`, { ...init, headers })
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers)
-  if (DEV_TOKEN && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${DEV_TOKEN}`)
-  }
   let res: Response
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, headers })
+    const token = await getValidAccessToken()
+    res = await doFetch(path, init ?? {}, token)
+    // A still-401 despite a "valid" token means the session died server-side
+    // (e.g. the refresh token was revoked by the reuse-detection tripwire) —
+    // try one silent refresh-and-retry before giving up.
+    if (res.status === 401 && token) {
+      const refreshed = await getValidAccessToken()
+      if (refreshed && refreshed !== token) {
+        res = await doFetch(path, init ?? {}, refreshed)
+      }
+    }
+    if (res.status === 401) {
+      forceLogout()
+    }
   } catch (err) {
     // Network error / connection refused — the backend isn't up yet.
     throw new ApiError(err instanceof Error ? err.message : 'Network error', { code: 'network_error' })

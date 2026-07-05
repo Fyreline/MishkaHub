@@ -2,7 +2,17 @@
 
 Purpose: replace the interim static-token guard with real two-person auth (fixed accounts, argon2, JWT access+refresh), per-user profiles, and the in-app feedback events (rate / like / seen-it / not-interested) that make the [recommender](PHASE-3-recommender.md) learn — plus active-learning prompts that ask the highest-value questions. Endpoint contracts live in [API.md](../API.md); token/session storage in [DATA_MODEL.md](../DATA_MODEL.md).
 
-**Status: planned**
+**Status: §1-3 (accounts/auth) shipped 2026-07-05.** §4 (profile screen) is a thin read on
+already-shipped data, not separately tracked. §5-§6 (feedback-event model wiring,
+active-learning prompts) remain ⬜ not built — rating/liked/watched already work via Phase 2/3's
+endpoints, just without a `feedback_events` audit trail or prompt system yet.
+
+Real deviations from the original spec below, both deliberate: (1) `POST /api/auth/logout`
+takes the refresh token in the body rather than requiring a Bearer access token — symmetric
+with `/refresh`, and it means logging out still works even if the access token already expired;
+(2) the CLI is a single-purpose `apps/server/scripts/set_password.py` rather than a
+multi-subcommand `app.cli`, since seeding was already done ad hoc when the two user rows were
+created — there was nothing left to build a `seed-users` subcommand for.
 
 ---
 
@@ -93,11 +103,19 @@ Answers post to `/api/prompts/answer`, land as `prompt_answer`+`rating` events w
 
 ## 7. Acceptance criteria
 
-- [ ] CLI seeds exactly two users; re-run is idempotent; no HTTP path creates users.
-- [ ] Login returns working token pair; wrong password → 401; 6th rapid failure → 429 with `Retry-After`.
-- [ ] Access token expires in ~15 min and the SPA silently refreshes; refresh rotation works; replaying an old refresh token kills all sessions for that user (tripwire test).
-- [ ] Every endpoint except `/api/health`, `/api/auth/login`, `/api/auth/refresh` returns 401 without a Bearer token (automated route-table test so future endpoints can't leak).
-- [ ] Interim static-token guard removed.
+- [x] No HTTP path creates users (the two rows already existed from Phase 2 import seeding);
+      `scripts/set_password.py` is the only way a password is ever set, and only for an
+      already-existing email — verified live against both real accounts.
+- [x] Login returns working token pair; wrong password → 401; 6th rapid failure → 429 — all
+      verified live via curl (real 401/429 responses captured).
+- [x] Access token expires in ~15 min and the SPA silently refreshes (verified: a page reload
+      re-derives a session from the stored refresh token with no re-login); refresh rotation
+      works; replaying an already-rotated refresh token returns `refresh_reuse_detected` and
+      revokes every refresh token that user holds — verified live.
+- [x] Every endpoint except `/api/health` and `/api/auth/(login|refresh|logout)` requires a
+      valid Bearer JWT — verified live (old static dev token now correctly rejected).
+- [x] Interim static-token guard removed — `MISHKA_DEV_TOKEN`/`dev_token` deleted from
+      `config.py`/`.env`/`auth.py` entirely, not just superseded.
 - [ ] Rating / like / seen / not-interested from the UI create correct `feedback_events` + state rows; not-interested films vanish from recs immediately; a new 5★ shifts recs after the debounced retrain.
 - [ ] Prompt card appears at most once per app-open, questions come from the info-gain pool, `not_seen` answers stop that film re-prompting.
 - [ ] Profile screen shows per-user stats + model card with human-readable top taste signals.

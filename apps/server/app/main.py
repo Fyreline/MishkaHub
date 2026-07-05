@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from .auth import require_auth
+from .auth import current_user
 from .clients.jellyfin import JellyfinClient
 from .clients.tmdb import TMDBClient
 from .config import get_settings
@@ -22,6 +22,7 @@ from .errors import register_error_handlers
 from .importers.cascade import run_cascade_background
 from .models import ImportRun, User
 from .routers import (
+    auth,
     credentials,
     feedback,
     films,
@@ -157,21 +158,23 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
 
-    # /api/health stays public; every other router requires the interim
-    # bearer-token guard (docs/API.md closing note) until Phase 4 JWTs land.
+    # /api/health and /api/auth/(login|refresh|logout) stay public — everything
+    # else requires a valid per-user JWT (docs/phases/PHASE-4-accounts-feedback.md).
+    # /api/auth/me enforces auth itself via its own Depends(current_user).
     app.include_router(health.router, prefix="/api")
-    app.include_router(tmdb.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(films.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(tmdb.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(films.router, prefix="/api", dependencies=[Depends(current_user)])
     app.include_router(
-        recommendations.router, prefix="/api", dependencies=[Depends(require_auth)]
+        recommendations.router, prefix="/api", dependencies=[Depends(current_user)]
     )
-    app.include_router(feedback.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(feedback.generic_router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(import_.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(credentials.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(settings.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(media.router, prefix="/api", dependencies=[Depends(require_auth)])
-    app.include_router(upcoming.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(feedback.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(feedback.generic_router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(import_.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(credentials.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(settings.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(media.router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(upcoming.router, prefix="/api", dependencies=[Depends(current_user)])
     return app
 
 

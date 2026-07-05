@@ -49,11 +49,18 @@ class Settings(BaseSettings):
     # data/secrets/secrets.enc). Defaults to keychain on macOS, file elsewhere.
     secret_backend: str = "keychain" if sys.platform == "darwin" else "file"
 
-    # --- Interim bearer-token guard for Phases 2-3 (docs/API.md closing note). ---
-    # Replaced transparently by JWTs in Phase 4. A single static long random
-    # token, required by `Authorization: Bearer <token>` on every router
-    # except /api/health.
-    dev_token: str = ""
+    # --- Phase 4 accounts: JWT access/refresh auth (docs/phases/PHASE-4-accounts-feedback.md). ---
+    # 32+ random bytes, e.g. `openssl rand -hex 32`. Rotating this logs
+    # everyone out (all access tokens invalidate, all refresh tokens too
+    # since they're looked up by hash, not decoded — acceptable, it's a
+    # 2-person household app).
+    jwt_secret: str = ""
+    access_token_ttl_minutes: int = 15
+    refresh_token_ttl_days: int = 30
+
+    @property
+    def auth_configured(self) -> bool:
+        return bool(self.jwt_secret)
 
     # --- Jellyfin (PHASE-7 §3 "Play on TV"). Points at a Jellyfin server the
     # household runs themselves (on a separate desktop, not this machine) —

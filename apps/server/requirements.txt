@@ -38,7 +38,11 @@ scikit-learn>=1.5
 scipy
 numpy
 
+# Accounts (Phase 4, docs/phases/PHASE-4-accounts-feedback.md): argon2id
+# password hashing (OWASP's current first recommendation; memory-hard,
+# doesn't silently truncate like bcrypt) + JWT access/refresh tokens.
+argon2-cffi>=23.1
+pyjwt>=2.9
+
 # Added in later phases:
-#   passlib[bcrypt]        -> Phase 4 (account auth)
-#   python-jose[cryptography] -> Phase 4 (JWT sessions)
 #   pandas                 -> Phase 3 §8 (eval/reporting only, not v0)

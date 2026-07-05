@@ -105,17 +105,19 @@ what's deliberately scoped down or still ahead.
    ```
 3. Open http://127.0.0.1:5173
 
-This is a household tool, not a public product — there's no real auth yet (an interim bearer
-token gates the API), the two accounts are hardcoded to Meowck and Meowmy, and the database holds
-two real people's real watch history. `data/`, `backups/`, `reference/`, and every `.env` are
-gitignored on purpose.
+This is a household tool, not a public product — exactly two accounts exist (Meowck and Meowmy),
+there is no registration path anywhere in the codebase, and the database holds two real people's
+real watch history. `data/`, `backups/`, `reference/`, and every `.env` are gitignored on
+purpose. First-time setup needs one more step: set both passwords with
+`python apps/server/scripts/set_password.py <email>` (hidden prompt, run locally — never typed
+into a form or sent anywhere else).
 
 ## Status
 
 Well past the original scaffold. Shipped and verified against the real household data: Letterboxd
 import, the Cat-alogue, in-app rating/watch editing, real streaming availability, the
 personalised recommender, an owned-media tab with local-file matching, an upcoming-releases tab,
-dark mode, and a full mobile pass. See [docs/PLAN.md](docs/PLAN.md) and
-[docs/phases/](docs/phases/) for exactly what's done versus still ahead — real per-user
-accounts/auth, Letterboxd write-back, streaming-arrival ("coming to Netflix") dates, and Jellyfin
-"Play on TV" (built, not yet tested against a live server) are the main things left.
+real two-person login (JWT + argon2id, no registration surface), dark mode, and a full mobile
+pass. See [docs/PLAN.md](docs/PLAN.md) and [docs/phases/](docs/phases/) for exactly what's done
+versus still ahead — Letterboxd write-back, streaming-arrival ("coming to Netflix") dates, and
+Jellyfin "Play on TV" (built, not yet tested against a live server) are the main things left.

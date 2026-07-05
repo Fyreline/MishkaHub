@@ -55,28 +55,43 @@ FastAPI-style `detail`, extended with a machine code:
 
 ## Phase 4 — Auth (documented first: everything else depends on it)
 
+**Status: shipped (2026-07-05)**, scoped to just accounts/login (the feedback-event/active-learning
+half of Phase 4 — §5/§6 below — is separate and still ⬜ not built). Two fixed accounts only —
+**there is no registration endpoint anywhere in this codebase.** Passwords are set once via
+`apps/server/scripts/set_password.py`, run locally on the household's own machine (hidden input,
+never sent anywhere else). See [PHASE-4](phases/PHASE-4-accounts-feedback.md) §1-3.
+
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `POST /api/auth/login` | none (rate-limited 5/15 min/IP) | password → token pair |
 | `POST /api/auth/refresh` | none (refresh token in body) | rotate tokens |
-| `POST /api/auth/logout` | Bearer | revoke the presented refresh token |
+| `POST /api/auth/logout` | none (refresh token in body — symmetric with `/refresh`, not Bearer) | revoke the presented refresh token |
 | `GET  /api/auth/me` | Bearer | current user profile |
 
 ```json
 // POST /api/auth/login
-{ "email": "mack@example.com", "password": "…" }
+{ "email": "luminal@mishka-hub.local", "password": "…" }
 // → 200
-{ "access_token": "eyJ…", "token_type": "bearer", "expires_in": 900,
+{ "access_token": "eyJ…", "expires_in": 900,
   "refresh_token": "9f2c…64-char-opaque…",
-  "user": { "id": 1, "email": "mack@example.com", "display_name": "Mack",
-            "letterboxd_username": "mack" } }
-// → 401 {"detail":"Invalid email or password","code":"bad_credentials"}
-// → 429 {"detail":"Too many attempts; try again in 12 minutes","code":"rate_limited"}
+  "user": { "id": 1, "email": "luminal@mishka-hub.local", "display_name": "Luminal" } }
+// → 401 {"detail":"Incorrect email or password","code":"invalid_credentials"}
+// → 429 {"detail":"Too many failed login attempts — try again later.","code":"rate_limited"}
 
 // POST /api/auth/refresh
 { "refresh_token": "9f2c…" }
 // → 200 same shape as login (refresh token is rotated; old one is revoked)
+// → 401 {"detail":"Refresh token already used — all sessions revoked, please log in again.","code":"refresh_reuse_detected"}
+//   (classic stolen-token tripwire: replaying an already-rotated-away token
+//   revokes every refresh token that user holds, not just the one presented)
 ```
+
+Every other router requires `Authorization: Bearer <access_token>` (a JWT, 15 min lifetime) via
+`Depends(current_user)`; the interim single-shared-token guard from Phases 2-3
+(`MISHKA_DEV_TOKEN`) has been fully removed, not just superseded. Frontend session handling
+(`apps/web/src/auth.ts`): the refresh token lives in `localStorage` (survives a reload); the
+access token is memory-only and silently re-derived from the refresh token on load and whenever
+a request would otherwise use an expired one.
 
 ---
 
@@ -382,9 +397,12 @@ built here).
 | 2 | `/api/films*`, `/api/import/*`, `/api/sync/*`, `/api/letterboxd/credentials*`, `/api/settings/subscriptions`, `/api/providers` |
 | 3 | `/api/recommendations*`, `/api/model/*` |
 | 4 | `/api/auth/*`, rating/like/seen/feedback, `/api/prompts/*` (+ global auth switch-on) |
+| 4 | `/api/auth/*` |
 | 5 | `/api/letterboxd/log*` |
 | 6 | `/api/insights/services` |
 | 7 | `/api/media/*` |
 | 8 | `/api/upcoming` |
 
-> Note on ordering: full login ships in Phase 4, but the API is internet-exposed from the moment the tunnel goes live. **Interim guard for Phases 2–3:** a single static bearer token (`MISHKA_DEV_TOKEN`, long random string, required by the same global dependency; the SPA keeps it in localStorage after a minimal token-entry screen). This keeps "every endpoint except /api/health requires auth" true from day one and is replaced transparently by JWTs in Phase 4.
+Real per-user JWT auth (§Phase 4 above) shipped 2026-07-05, replacing the Phases 2-3 interim
+single-shared-token guard (`MISHKA_DEV_TOKEN`) — that guard and its config field have been
+deleted from the codebase entirely, not just superseded.
