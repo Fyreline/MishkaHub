@@ -23,10 +23,15 @@ export function MovieCard({
   movie,
   badges,
   onClick,
+  expanded = false,
 }: {
   movie: Movie | FilmSummary
   badges?: CatalogueBadgeInfo
   onClick?: () => void
+  /** True while this card's expansion panel is open below the grid — draws a
+   * bolder clay outline matching the brace connector's stroke, so the poster,
+   * the connector and the panel read as one continuous outlined shape. */
+  expanded?: boolean
 }) {
   const rating = badges?.myRating != null
     ? badges.myRating.toFixed(1)
@@ -107,7 +112,9 @@ export function MovieCard({
       <button
         type="button"
         onClick={onClick}
-        className="group relative aspect-2/3 w-full overflow-hidden rounded-sm border border-line bg-paper-mid text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2"
+        className={`group relative aspect-2/3 w-full overflow-hidden rounded-sm border bg-paper-mid text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 ${
+          expanded ? 'border-clay ring-2 ring-clay' : 'border-line'
+        }`}
       >
         <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
       </button>
@@ -130,7 +137,9 @@ export function MovieCard({
         scale,
         touchAction: 'pan-y',
       }}
-      className="group relative z-0 aspect-2/3 w-full origin-center overflow-hidden rounded-sm border border-line bg-paper-mid text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10"
+      className={`group relative z-0 aspect-2/3 w-full origin-center overflow-hidden rounded-sm border bg-paper-mid text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10 ${
+        expanded ? 'border-clay ring-2 ring-clay' : 'border-line'
+      }`}
     >
       <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
       <motion.span

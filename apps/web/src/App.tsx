@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion, useSpring, useTransform } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useSpring, useTransform } from 'motion/react'
 import {
   api,
   type FilmDetail,
@@ -21,9 +21,11 @@ import { bootstrap, getUser, logout, subscribe, type AuthUser } from './auth'
 import {
   FilmHeaderSkeleton,
   MoreLikeThisSection,
+  MoreLikeThisSkeleton,
   UserRatingColumns,
   UserRatingColumnsSkeleton,
   WhereToWatchSection,
+  WhereToWatchSkeleton,
 } from './components/FilmDetailSections'
 import { useFilmDetail } from './useFilmDetail'
 
@@ -448,48 +450,134 @@ const BRACE_EDGE = 5 // inset from each side where the corner completes
 const BRACE_PEAK_OFFSET = 3.75 // x-distance from the peak where the "steep" control point sits
 const BRACE_SHOULDER_RATIO = 0.516 // how far along the shoulder span the gentler control point sits
 
-function bracePath(peakPercent: number): string {
+/** `tooth` is how "grown" the central point is, 0..~1.2: 1 = the normal full
+ * peak, 0 = fully retracted flat into the shoulder line (used while the
+ * connector is detached mid-switch), >1 = a springy overshoot poking slightly
+ * past the poster (the liquid "wobble" as a new connection lands). The neck
+ * also narrows as the tooth retracts — that's the water-tension pinch. */
+function bracePath(peakPercent: number, tooth = 1): string {
   const p = Math.max(BRACE_EDGE + BRACE_PEAK_OFFSET + 2, Math.min(100 - BRACE_EDGE - BRACE_PEAK_OFFSET - 2, peakPercent))
-  const leftSpan = p - BRACE_PEAK_OFFSET - BRACE_EDGE
-  const rightSpan = 100 - BRACE_EDGE - (p + BRACE_PEAK_OFFSET)
+  const t = Math.max(0, Math.min(1.2, tooth))
+  const peakY = BRACE_SHOULDER - (BRACE_SHOULDER - BRACE_PEAK_Y) * t
+  const offset = BRACE_PEAK_OFFSET * (0.35 + 0.65 * Math.min(t, 1))
+  const leftSpan = p - offset - BRACE_EDGE
+  const rightSpan = 100 - BRACE_EDGE - (p + offset)
   const leftCtrl1 = BRACE_EDGE + leftSpan * BRACE_SHOULDER_RATIO
-  const leftCtrl2 = p - BRACE_PEAK_OFFSET
-  const rightCtrl1 = p + BRACE_PEAK_OFFSET
+  const leftCtrl2 = p - offset
+  const rightCtrl1 = p + offset
   const rightCtrl2 = 100 - BRACE_EDGE - rightSpan * BRACE_SHOULDER_RATIO
   return [
     `M0,${BRACE_BOTTOM}`,
     `C0,${BRACE_SHOULDER} 0,${BRACE_SHOULDER} ${BRACE_EDGE},${BRACE_SHOULDER}`,
-    `C${leftCtrl1},${BRACE_SHOULDER} ${leftCtrl2},${BRACE_SHOULDER} ${p},${BRACE_PEAK_Y}`,
+    `C${leftCtrl1},${BRACE_SHOULDER} ${leftCtrl2},${BRACE_SHOULDER} ${p},${peakY}`,
     `C${rightCtrl1},${BRACE_SHOULDER} ${rightCtrl2},${BRACE_SHOULDER} ${100 - BRACE_EDGE},${BRACE_SHOULDER}`,
     `C100,${BRACE_SHOULDER} 100,${BRACE_SHOULDER} 100,${BRACE_BOTTOM}`,
   ].join(' ')
 }
 
+/** The connector's "switching posters" choreography, driven by the row below:
+ * steady → stretch (lean toward the new poster, surface tension resisting) →
+ * snap (the old connection lets go: the tooth retracts flat, a droplet falls)
+ * → form (the peak springs back up at the new poster, with overshoot wobble)
+ * → steady. Timings are exported to the row so its setTimeout sequencing and
+ * the animations here can never drift apart. */
+type ConnectorPhase = 'steady' | 'stretch' | 'snap' | 'form'
+const SWITCH_STRETCH_MS = 210
+const SWITCH_SNAP_MS = 130
+const SWITCH_FORM_MS = 400
+/** How far (0..1) the peak leans toward the new poster before the old
+ * connection gives way — less than half, so it clearly *resists* first. */
+const STRETCH_GIVE = 0.38
+
 /** Links the expansion panel back to the poster it came from — edges drop
  * straight down into the panel, a rounded corner, a shoulder, then a sharp
- * point at the peak (see bracePath). The peak position is spring-animated
- * (not snapped) so switching between recommendation cards slides the whole
- * shape smoothly to the new one instead of jumping. Explicit
- * `overflow: visible` + a taller viewBox than the old version — the
- * previous shape's ends sat right at the SVG's own bounding-box edge and
- * got clipped there (the household mistook it for the panel's rounded
- * corners doing the clipping; it was the connector's own SVG box). */
-function BraceConnector({ peakPercent }: { peakPercent: number }) {
-  const spring = useSpring(peakPercent, { stiffness: 260, damping: 32 })
+ * point at the peak (see bracePath). Two stacked paths from the same data:
+ * a panel-background fill (closed along the bottom, unstroked) that makes the
+ * brace read as the panel's own body pinching up to the poster, and a bold
+ * clay stroke (open, unfilled — closing it would draw a line across the
+ * panel's borderless top edge) matching the panel's border and the expanded
+ * poster's ring, so poster → neck → panel reads as one continuous outline.
+ * The peak position stays spring-animated for small nudges (e.g. the column
+ * count changing); actual poster switches instead run the detach/reform
+ * choreography above via `phase` + `stretchPercent`. Explicit
+ * `overflow: visible` — the shape's ends sit right at the SVG's own
+ * bounding-box edge and would get clipped there otherwise. */
+function BraceConnector({
+  peakPercent,
+  stretchPercent,
+  phase,
+}: {
+  peakPercent: number
+  stretchPercent: number | null
+  phase: ConnectorPhase
+}) {
+  const peakX = useSpring(peakPercent, { stiffness: 260, damping: 32 })
+  // Starts at 0 so opening the panel grows the tooth up toward the poster
+  // (the connection "forming") rather than popping in fully drawn.
+  const tooth = useMotionValue(0)
+
   useEffect(() => {
-    spring.set(peakPercent)
-  }, [peakPercent, spring])
-  const d = useTransform(spring, bracePath)
+    if (phase === 'steady') {
+      peakX.set(peakPercent)
+      const anim = animate(tooth, 1, { type: 'spring', stiffness: 320, damping: 22 })
+      return () => anim.stop()
+    }
+    if (phase === 'stretch' && stretchPercent != null) {
+      // Lean partway toward the new poster; the tip flattens slightly as it
+      // strains — stretched liquid thins before it lets go.
+      peakX.set(peakPercent + (stretchPercent - peakPercent) * STRETCH_GIVE)
+      const anim = animate(tooth, 0.8, { duration: SWITCH_STRETCH_MS / 1000, ease: 'easeOut' })
+      return () => anim.stop()
+    }
+    if (phase === 'snap') {
+      // Accelerating retract — tension released, the neck snaps back flat.
+      const anim = animate(tooth, 0, { duration: SWITCH_SNAP_MS / 1000, ease: [0.7, 0, 0.85, 0.4] })
+      return () => anim.stop()
+    }
+    // 'form': teleport the (currently flat, so invisible) peak to the new
+    // poster, then spring the tooth back up with a deliberate overshoot
+    // wobble — the new drop of liquid catching hold.
+    peakX.jump(peakPercent)
+    const anim = animate(tooth, 1, { type: 'spring', stiffness: 430, damping: 15 })
+    return () => anim.stop()
+  }, [phase, peakPercent, stretchPercent, peakX, tooth])
+
+  const dStroke = useTransform([peakX, tooth] as const, ([p, t]: number[]) => bracePath(p, t))
+  const dFill = useTransform([peakX, tooth] as const, ([p, t]: number[]) => `${bracePath(p, t)} Z`)
+
+  // Where the droplet detaches from: the stretched peak position, captured at
+  // the moment the snap starts (during 'form' the peak has already jumped to
+  // the new poster, so it can't be read live — the ref keeps the old spot
+  // while the droplet finishes falling).
+  const dropLeftRef = useRef('50%')
+  if (phase === 'snap' && stretchPercent != null) {
+    dropLeftRef.current = `${peakPercent + (stretchPercent - peakPercent) * STRETCH_GIVE}%`
+  }
+
   return (
-    <svg
-      viewBox={`0 0 100 ${BRACE_BOTTOM}`}
-      preserveAspectRatio="none"
-      aria-hidden
-      style={{ overflow: 'visible' }}
-      className="pointer-events-none h-9 w-full text-clay/60"
-    >
-      <motion.path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div className="relative">
+      <svg
+        viewBox={`0 0 100 ${BRACE_BOTTOM}`}
+        preserveAspectRatio="none"
+        aria-hidden
+        style={{ overflow: 'visible' }}
+        className="pointer-events-none h-9 w-full text-clay"
+      >
+        <motion.path d={dFill} fill="var(--color-paper-mid)" stroke="none" />
+        <motion.path d={dStroke} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {(phase === 'snap' || phase === 'form') && (
+        <motion.span
+          key="droplet"
+          aria-hidden
+          className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-clay"
+          style={{ left: dropLeftRef.current, x: '-50%' }}
+          initial={{ y: 2, opacity: 0.9, scale: 1 }}
+          animate={{ y: 26, opacity: 0, scale: 0.5 }}
+          transition={{ duration: 0.32, ease: 'easeIn' }}
+        />
+      )}
+    </div>
   )
 }
 
@@ -506,11 +594,16 @@ function BraceConnector({ peakPercent }: { peakPercent: number }) {
  * useFilmDetail + FilmDetailSections; only the shell differs. */
 function RecommendationExpansionPanel({
   filmId,
+  originPercent,
   onNavigate,
   onClose,
   onOpenOverlay,
 }: {
   filmId: number
+  /** Horizontal position (0–100) of the brace peak / clicked poster — the
+   * panel's open/close scaling is anchored here so it visibly expands out
+   * from the poster it belongs to, not from its own dead center. */
+  originPercent: number
   onNavigate: (id: number) => void
   onClose: () => void
   /** "More like this" opens the full movie overlay on top, rather than
@@ -554,14 +647,26 @@ function RecommendationExpansionPanel({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      // Border on the sides + bottom only (no top) — matches the brace's
-      // own color, so the connector reads as flowing straight into the box
-      // rather than the box being a separate, disconnected shape.
-      className="relative overflow-hidden rounded-xl border-x border-b border-clay/60 bg-paper-mid p-4 sm:p-6"
+      // Drops down and expands open from the brace peak (transform origin is
+      // the clicked poster's x, at the panel's top edge) — a compressed
+      // scaleY unfolding downward plus a small drop, on a spring so it lands
+      // with a hint of settle rather than a linear slide.
+      initial={{ opacity: 0, y: -16, scaleY: 0.72, scaleX: 0.98 }}
+      animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+      exit={{ opacity: 0, y: -12, scaleY: 0.9, transition: { duration: 0.16, ease: 'easeIn' } }}
+      transition={{
+        type: 'spring',
+        stiffness: 340,
+        damping: 28,
+        mass: 0.9,
+        opacity: { duration: 0.18, ease: 'easeOut' },
+      }}
+      style={{ transformOrigin: `${originPercent}% 0%` }}
+      // Border on the sides + bottom only (no top) — same 2px weight and
+      // clay color as the brace's stroke and the expanded poster's ring, so
+      // poster → connector → box reads as one continuous outlined shape
+      // rather than three separate elements.
+      className="relative overflow-hidden rounded-xl border-x-2 border-b-2 border-clay bg-paper-mid p-4 sm:p-6"
     >
       <button
         type="button"
@@ -572,10 +677,18 @@ function RecommendationExpansionPanel({
       </button>
 
       {loading && (
+        // Mirrors the loaded layout section-for-section (header, then the
+        // ratings/where-to-watch two-column grid, then the More-like-this
+        // poster grid) so the panel's full shape is stable from the first
+        // frame — no bottom half popping in when the data lands.
         <div className="pr-10">
           <FilmHeaderSkeleton />
-          <div className="mt-4">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <UserRatingColumnsSkeleton />
+            <WhereToWatchSkeleton />
+          </div>
+          <div className="mt-4">
+            <MoreLikeThisSkeleton columns={6} />
           </div>
         </div>
       )}
@@ -588,7 +701,20 @@ function RecommendationExpansionPanel({
               text content — always exactly as tall as the synopsis needs. */}
           <div className="relative -m-4 mb-0 overflow-hidden rounded-t-xl sm:-m-6 sm:mb-0">
             {detail.backdrop && (
-              <img src={detail.backdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />
+              // Keyed on the image URL + a slight delay: when switching films
+              // the new backdrop fades in *after* the connector has re-formed
+              // at the new poster (the detach/reform beat finishes first),
+              // rather than everything changing at once.
+              <motion.img
+                key={detail.backdrop}
+                src={detail.backdrop}
+                alt=""
+                aria-hidden
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.45, ease: 'easeOut', delay: 0.12 }}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
             )}
             {detail.backdrop && (
               // A lighter touch than the first pass: a subtle uniform wash
@@ -603,9 +729,15 @@ function RecommendationExpansionPanel({
                 className="absolute inset-0"
                 aria-hidden
                 style={{
+                  // Third pass, lighter again ("still can feel a little hard
+                  // to see"): the uniform wash drops 18% → 8%, and the
+                  // gradient now only reaches *near*-solid (88%) and much
+                  // further right (65% instead of 30%), so most of the frame
+                  // actually reads as a photo. Per-glyph legibility is the
+                  // textShadow glow's job below, not this wash's.
                   background: [
-                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 30%, transparent) 0%, var(--color-paper-mid) 30%)',
-                    'color-mix(in srgb, var(--color-paper-mid) 18%, transparent)',
+                    'linear-gradient(to right, color-mix(in srgb, var(--color-paper-mid) 10%, transparent) 0%, color-mix(in srgb, var(--color-paper-mid) 45%, transparent) 40%, color-mix(in srgb, var(--color-paper-mid) 88%, transparent) 65%)',
+                    'color-mix(in srgb, var(--color-paper-mid) 8%, transparent)',
                   ].join(', '),
                 }}
               />
@@ -768,6 +900,21 @@ function UnseenRecommendationsRow() {
   const [expanded, setExpanded] = useState<{ filmId: number; index: number } | null>(null)
   const [overlayFilmId, setOverlayFilmId] = useState<number | null>(null)
 
+  // Poster-switch choreography (see BraceConnector): while a switch is in
+  // flight, `expanded` still points at the OLD film (its panel + connector
+  // stay up through the stretch and snap beats) and `switchTarget` holds the
+  // new one; the timers below advance the phases and finally commit the
+  // target. Any new click cancels the in-flight sequence first.
+  const [switchTarget, setSwitchTarget] = useState<{ filmId: number; index: number } | null>(null)
+  const [connectorPhase, setConnectorPhase] = useState<ConnectorPhase>('steady')
+  const switchTimers = useRef<number[]>([])
+
+  function clearSwitchTimers() {
+    for (const t of switchTimers.current) window.clearTimeout(t)
+    switchTimers.current = []
+  }
+  useEffect(() => clearSwitchTimers, [])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -800,13 +947,44 @@ function UnseenRecommendationsRow() {
   // Filter changes invalidate whatever was expanded (its position/relevance
   // may no longer make sense against the new result set).
   useEffect(() => {
+    clearSwitchTimers()
+    setSwitchTarget(null)
+    setConnectorPhase('steady')
     setExpanded(null)
   }, [profile, runtimeBuckets, genres, vibe])
 
   const visible = items.slice(0, columns)
 
   function handleCardClick(filmId: number, index: number) {
-    setExpanded((prev) => (prev && prev.filmId === filmId ? null : { filmId, index }))
+    clearSwitchTimers()
+    if (!expanded) {
+      setConnectorPhase('steady')
+      setExpanded({ filmId, index })
+      return
+    }
+    // "Current" from the household's point of view is whatever the connector
+    // is headed for — mid-switch, clicking the incoming poster again closes.
+    const current = switchTarget ?? expanded
+    if (current.filmId === filmId) {
+      setSwitchTarget(null)
+      setConnectorPhase('steady')
+      setExpanded(null)
+      return
+    }
+    // Switching to a different poster: stretch → snap → commit + re-form.
+    setSwitchTarget({ filmId, index })
+    setConnectorPhase('stretch')
+    switchTimers.current.push(window.setTimeout(() => setConnectorPhase('snap'), SWITCH_STRETCH_MS))
+    switchTimers.current.push(
+      window.setTimeout(() => {
+        setExpanded({ filmId, index })
+        setSwitchTarget(null)
+        setConnectorPhase('form')
+      }, SWITCH_STRETCH_MS + SWITCH_SNAP_MS),
+    )
+    switchTimers.current.push(
+      window.setTimeout(() => setConnectorPhase('steady'), SWITCH_STRETCH_MS + SWITCH_SNAP_MS + SWITCH_FORM_MS),
+    )
   }
 
   return (
@@ -908,6 +1086,7 @@ function UnseenRecommendationsRow() {
                   vote_average: null,
                 }}
                 onClick={() => handleCardClick(item.film.id, index)}
+                expanded={(switchTarget ?? expanded)?.filmId === item.film.id}
               />
             ))}
           </div>
@@ -916,9 +1095,14 @@ function UnseenRecommendationsRow() {
         <AnimatePresence>
           {expanded && (
             <div key="expansion">
-              <BraceConnector peakPercent={((expanded.index + 0.5) / columns) * 100} />
+              <BraceConnector
+                peakPercent={((expanded.index + 0.5) / columns) * 100}
+                stretchPercent={switchTarget ? ((switchTarget.index + 0.5) / columns) * 100 : null}
+                phase={connectorPhase}
+              />
               <RecommendationExpansionPanel
                 filmId={expanded.filmId}
+                originPercent={((expanded.index + 0.5) / columns) * 100}
                 onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
                 onClose={() => setExpanded(null)}
                 onOpenOverlay={setOverlayFilmId}

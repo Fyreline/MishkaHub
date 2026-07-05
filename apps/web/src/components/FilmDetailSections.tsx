@@ -62,6 +62,45 @@ export function UserRatingColumnsSkeleton() {
   )
 }
 
+/** Placeholder rows matching WhereToWatchSection's real layout (heading, two
+ * provider rows, attribution line). Used by the expansion panel's full-shape
+ * loading state — the section itself also reuses the row markup for its own
+ * independent availability-loading state. */
+export function WhereToWatchSkeleton() {
+  return (
+    <div className="animate-pulse border-t border-line pt-4">
+      <div className="h-4 w-28 rounded bg-paper-deep" />
+      <div className="mt-2 space-y-1.5">
+        {[0, 1].map((i) => (
+          <div key={i} className="h-9 rounded-md bg-paper-deep" />
+        ))}
+      </div>
+      <div className="mt-2 h-3 w-44 rounded bg-paper-deep" />
+    </div>
+  )
+}
+
+/** Maps a column count to the static Tailwind class MoreLikeThis uses — kept
+ * as explicit strings (not template interpolation) so Tailwind's scanner can
+ * see them. Shared by the real grid and its skeleton so they always agree. */
+function moreLikeThisGridClass(columns: number): string {
+  return columns >= 6 ? 'grid-cols-6' : columns >= 5 ? 'grid-cols-5' : 'grid-cols-4'
+}
+
+/** Placeholder grid matching MoreLikeThisSection's real poster layout. */
+export function MoreLikeThisSkeleton({ columns = 4 }: { columns?: number }) {
+  return (
+    <div className="animate-pulse border-t border-line pt-4">
+      <div className="h-4 w-24 rounded bg-paper-deep" />
+      <div className={`mt-2 grid ${moreLikeThisGridClass(columns)} gap-2`}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="aspect-2/3 rounded-sm bg-paper-deep" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** Both users' rating/liked/watched controls, side by side. Shared between
  * Catalogue.tsx's DetailDrawer and the homepage's expand-in-place
  * recommendation panel — always both interactive, regardless of which
@@ -209,7 +248,13 @@ export function WhereToWatchSection({
               {streamingOffers.map((o) => (
                 <li
                   key={`${o.provider_id}-${o.kind}`}
-                  className="flex items-center justify-between rounded-md bg-paper-mid px-3 py-2 text-sm"
+                  // bg-paper-deep, not bg-paper-mid: this component renders in
+                  // two shells with different backgrounds (DetailDrawer is
+                  // bg-paper, the homepage expansion panel is bg-paper-mid) —
+                  // paper-mid rows vanished into the panel. paper-deep is one
+                  // step below both, so the rows read as their own little
+                  // cards in either context, light and dark alike.
+                  className="flex items-center justify-between rounded-md border border-line bg-paper-deep px-3 py-2 text-sm"
                 >
                   <span className="text-ink-mid">{o.provider_name}</span>
                   {availability?.tmdb_watch_page && (
@@ -250,7 +295,7 @@ export function MoreLikeThisSection({
   onNavigate: (id: number) => void
   columns?: number
 }) {
-  const gridColsClass = columns >= 6 ? 'grid-cols-6' : columns >= 5 ? 'grid-cols-5' : 'grid-cols-4'
+  const gridColsClass = moreLikeThisGridClass(columns)
   return (
     <div className="border-t border-line pt-4">
       <h4 className="text-sm font-medium text-ink">More like this</h4>
