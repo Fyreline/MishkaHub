@@ -15,6 +15,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPage } from './components/SettingsPage'
 import { OwnedPage } from './components/OwnedPage'
 import { UpcomingPage } from './components/UpcomingPage'
+import { ServiceInsightsPage } from './components/ServiceInsightsPage'
 import { LoginScreen } from './components/LoginScreen'
 import { bootstrap, getUser, logout, subscribe, type AuthUser } from './auth'
 import {
@@ -1039,7 +1040,7 @@ function CatMark() {
   )
 }
 
-type View = 'catalogue' | 'owned' | 'upcoming' | 'settings'
+type View = 'catalogue' | 'owned' | 'upcoming' | 'services' | 'settings'
 
 /** Gates the whole app behind the two-person login (docs/phases/PHASE-4-accounts-feedback.md).
  * `bootstrap()` tries a silent refresh from a stored refresh token on first
@@ -1119,6 +1120,16 @@ function AuthenticatedApp() {
             >
               Coming soon
             </button>
+            <button
+              type="button"
+              onClick={() => setView('services')}
+              aria-pressed={view === 'services'}
+              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
+                view === 'services' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+              }`}
+            >
+              Services
+            </button>
           </nav>
           <div className="flex items-center gap-3">
             <StatusPill health={health} error={healthError} />
@@ -1136,6 +1147,8 @@ function AuthenticatedApp() {
           <OwnedPage />
         ) : view === 'upcoming' ? (
           <UpcomingPage />
+        ) : view === 'services' ? (
+          <ServiceInsightsPage />
         ) : (
           <>
             <div className="pb-8 text-center">

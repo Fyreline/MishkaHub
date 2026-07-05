@@ -185,6 +185,34 @@ export interface RecommendationsResponse {
   items: RecommendationItem[]
 }
 
+// --- Service insights (Phase 6 — add/drop suggestions) -------------------
+
+export interface ServiceInsightFilm {
+  id: number
+  title: string
+  year: number | null
+  poster: string | null
+  score: number
+}
+
+export interface ServiceInsightEntry {
+  provider_id: number
+  provider_name: string
+  logo: string | null
+  /** Present on `add` entries — how many top recommendations this service would newly unlock. */
+  unlocked_count?: number
+  /** Present on `drop` entries — how many top recommendations rely on ONLY this subscribed service. */
+  exclusive_count?: number
+  films: ServiceInsightFilm[]
+}
+
+export interface ServiceInsightsResponse {
+  profile: string
+  attribution: string
+  add: ServiceInsightEntry[]
+  drop: ServiceInsightEntry[]
+}
+
 export interface GetRecommendationsParams {
   profile?: RecommendationProfile
   limit?: number
@@ -427,6 +455,8 @@ export const api = {
     }),
   getRecommendations: (params: GetRecommendationsParams = {}) =>
     get<RecommendationsResponse>(`/api/recommendations${toQuery(params)}`),
+  getServiceInsights: (profile: RecommendationProfile = 'together') =>
+    get<ServiceInsightsResponse>(`/api/insights/services${toQuery({ profile })}`),
 
   // Import
   runImport: (user: 1 | 2, source: ImportSource = 'auto') =>

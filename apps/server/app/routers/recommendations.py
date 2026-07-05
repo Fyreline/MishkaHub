@@ -26,7 +26,7 @@ from ..db import get_session
 from ..errors import MishkaHTTPException
 from ..models import Film, ModelArtifact, Rating, Watch
 from ..recommender.artifacts import active_taste_artifact
-from ..recommender.pipeline import _RUNTIME_BUCKETS, recommend, retrain
+from ..recommender.pipeline import _RUNTIME_BUCKETS, recommend, retrain, service_insights
 from ..recommender.vibes import ALL_VIBE_TAGS
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,24 @@ async def get_recommendations(
         "attribution": ATTRIBUTION,
         "items": result.items,
     }
+
+
+@router.get("/insights/services")
+async def get_service_insights(
+    request: Request,
+    profile: Profile = Query(default="together"),
+    session: Session = Depends(get_session),
+) -> dict:
+    """docs/phases/PHASE-6-service-optimisation.md — "you'd benefit from
+    adding service X" / "Y isn't earning its keep." See
+    pipeline.service_insights's docstring for the exact ranking method
+    (the existing taste-score model, not a new one)."""
+    tmdb: TMDBClient = request.app.state.tmdb
+    try:
+        result = await service_insights(session, tmdb, profile=profile)
+    except ValueError as exc:
+        raise MishkaHTTPException(status_code=422, detail=str(exc), code="invalid_profile") from exc
+    return {**result, "attribution": ATTRIBUTION}
 
 
 @router.get("/recommendations/{film_id}/why")

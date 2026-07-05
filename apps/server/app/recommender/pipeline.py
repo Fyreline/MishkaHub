@@ -456,3 +456,157 @@ def _item_payload(
         "owned": owned,
         "why": why,
     }
+
+
+# --------------------------------------------------------------------------
+# Service insights (§6 — "you'd benefit from adding/dropping service X")
+# --------------------------------------------------------------------------
+# How many of the top-scored candidates to consider "good recommendations"
+# when deciding which services are worth adding/dropping. Not the same pool
+# as a single /recommendations page (8-50 items) — this needs to be large
+# enough that a service's real contribution isn't noise, but the taste-score
+# computation itself is the same one /recommendations uses.
+SERVICE_INSIGHTS_TOP_N = 150
+SERVICE_INSIGHTS_FILMS_PER_SERVICE = 8
+
+
+async def service_insights(
+    session: Session, tmdb: TMDBClient, *, profile: str = "together"
+) -> dict:
+    """"You'd benefit from adding X" / "Y isn't earning its keep" — docs/
+    phases/PHASE-6-service-optimisation.md.
+
+    Ranks the household's top SERVICE_INSIGHTS_TOP_N unwatched candidates by
+    taste score ALONE (availability_boost={} — every candidate gets the same
+    zero offset, so relative ranking is untouched, see score_candidates'
+    W_AVAIL term), i.e. "how good a recommendation is this, regardless of
+    whether you can currently watch it" — the same taste model
+    /recommendations already uses, not a new ranking system (there wasn't a
+    need to build one; this is exactly what the household asked for if no
+    such ranking existed yet).
+
+    For each streaming service NOT subscribed to, count how many of those
+    top films it carries that AREN'T already reachable via a subscribed
+    service (crediting only the NEW value a subscription would add) — the
+    ones with the most such films are the best "worth adding" candidates.
+
+    For each subscribed service, count how many of those top films are
+    available ONLY through it among the household's subscriptions (i.e.
+    dropping it would actually lose access) — the ones with the fewest
+    such films are the best "worth dropping" candidates.
+    """
+    from collections import defaultdict
+
+    profile_user_ids = _PROFILE_USERS.get(profile)
+    if profile_user_ids is None:
+        raise ValueError(f"unknown profile {profile!r}")
+
+    corpus, models, global_mean = build_models_cached(session)
+
+    ineligible: set[int] = set()
+    for uid in profile_user_ids:
+        ineligible |= eligible_film_ids(session, uid)
+
+    films_by_id = {f.id: f for f in _all_films(session)}
+    candidate_films = [
+        films_by_id[fid] for fid in corpus.film_ids
+        if fid in films_by_id and fid not in ineligible
+    ]
+    if not candidate_films:
+        return {"profile": profile, "add": [], "drop": []}
+
+    seen_by = {uid: _seen_by(session, uid) for uid in profile_user_ids}
+    scored = score_candidates(
+        corpus=corpus,
+        candidate_films=candidate_films,
+        models=models,
+        seen_by=seen_by,
+        availability_boost={},  # deliberately neutral — see docstring
+        global_mean=global_mean,
+        profile_user_ids=profile_user_ids,
+    )
+    top = sorted(scored, key=lambda c: c.score, reverse=True)[:SERVICE_INSIGHTS_TOP_N]
+    top_ids = [c.film_id for c in top]
+
+    to_refresh = [fid for fid in top_ids if needs_refresh(session, fid, REGION)][
+        :AVAIL_REFRESH_CAP
+    ]
+    if to_refresh:
+        await refresh_many_film_availability(session, tmdb, to_refresh, REGION)
+
+    rows = session.execute(
+        select(Availability.film_id, Availability.provider_id).where(
+            Availability.film_id.in_(top_ids),
+            Availability.region == REGION,
+            Availability.kind.in_(("flatrate", "free", "ads")),
+        )
+    ).all()
+    providers_by_film: dict[int, set[int]] = defaultdict(set)
+    for film_id, provider_id in rows:
+        providers_by_film[film_id].add(provider_id)
+
+    subscribed_ids = _subscribed_provider_ids(session)
+    catalogue = {p["provider_id"]: p for p in await tmdb.watch_providers_catalogue(region=REGION)}
+    subs_by_id = {
+        s.provider_id: s for s in session.scalars(select(Subscription)).all()
+    }
+
+    def _film_card(c: ScoredCandidate) -> dict:
+        f = films_by_id[c.film_id]
+        return {
+            "id": f.id,
+            "title": f.title,
+            "year": f.release_year,
+            "poster": TMDBClient.poster_url(f.poster_path),
+            "score": round(c.score, 4),
+        }
+
+    def _provider_name_logo(provider_id: int) -> tuple[str, str | None]:
+        sub = subs_by_id.get(provider_id)
+        info = catalogue.get(provider_id, {})
+        name = info.get("provider_name") or (sub.provider_name if sub else f"Provider {provider_id}")
+        logo_path = info.get("logo_path") or (sub.logo_path if sub else None)
+        return name, TMDBClient.poster_url(logo_path, size="small") if logo_path else None
+
+    add_films_by_provider: dict[int, list[ScoredCandidate]] = defaultdict(list)
+    for c in top:  # already sorted by score desc
+        providers = providers_by_film.get(c.film_id, set())
+        if providers & subscribed_ids:
+            continue  # already reachable on something the household pays for
+        for pid in providers:
+            if pid not in subscribed_ids:
+                add_films_by_provider[pid].append(c)
+
+    add = []
+    for pid, films in add_films_by_provider.items():
+        name, logo = _provider_name_logo(pid)
+        add.append({
+            "provider_id": pid,
+            "provider_name": name,
+            "logo": logo,
+            "unlocked_count": len(films),
+            "films": [_film_card(c) for c in films[:SERVICE_INSIGHTS_FILMS_PER_SERVICE]],
+        })
+    add.sort(key=lambda s: s["unlocked_count"], reverse=True)
+
+    unique_films_by_provider: dict[int, list[ScoredCandidate]] = defaultdict(list)
+    for c in top:
+        providers = providers_by_film.get(c.film_id, set()) & subscribed_ids
+        if len(providers) == 1:
+            (only_pid,) = providers
+            unique_films_by_provider[only_pid].append(c)
+
+    drop = []
+    for pid in subscribed_ids:
+        name, logo = _provider_name_logo(pid)
+        films = unique_films_by_provider.get(pid, [])
+        drop.append({
+            "provider_id": pid,
+            "provider_name": name,
+            "logo": logo,
+            "exclusive_count": len(films),
+            "films": [_film_card(c) for c in films[:SERVICE_INSIGHTS_FILMS_PER_SERVICE]],
+        })
+    drop.sort(key=lambda s: s["exclusive_count"])  # least unique value first = best to drop
+
+    return {"profile": profile, "add": add, "drop": drop}
