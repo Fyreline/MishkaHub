@@ -1229,6 +1229,13 @@ function CatMark() {
 
 type View = 'catalogue' | 'owned' | 'upcoming' | 'services' | 'settings'
 
+const NAV_TABS: { view: View; label: string }[] = [
+  { view: 'catalogue', label: 'Cat-alogue' },
+  { view: 'owned', label: 'Owned' },
+  { view: 'upcoming', label: 'Coming soon' },
+  { view: 'services', label: 'Services' },
+]
+
 /** Gates the whole app behind the two-person login (docs/phases/PHASE-4-accounts-feedback.md).
  * `bootstrap()` tries a silent refresh from a stored refresh token on first
  * mount so a page reload doesn't force a re-login; `subscribe()` re-renders
@@ -1269,61 +1276,58 @@ function AuthenticatedApp() {
   return (
     <div className="min-h-full bg-paper text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-paper/95">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <CatMark />
-            <span className="font-display text-lg font-medium tracking-[-0.005em]">
-              Mishka <span className="text-clay">Hub</span>
-            </span>
+        <div className="mx-auto max-w-6xl px-5 py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex shrink-0 items-center gap-2.5">
+              <CatMark />
+              <span className="font-display text-lg font-medium tracking-[-0.005em]">
+                Mishka <span className="text-clay">Hub</span>
+              </span>
+            </div>
+            {/* Desktop/tablet: tabs sit inline, centered between the wordmark
+                and the controls. Below `sm`, there's not enough width for
+                logo + 4 tabs + 4 controls on one line without either
+                truncating text or squeezing the tabs down to nothing — so
+                they move to their own full-width row instead (below). */}
+            <nav className="hidden items-center gap-1 sm:flex">
+              {NAV_TABS.map((tab) => (
+                <button
+                  key={tab.view}
+                  type="button"
+                  onClick={() => setView(tab.view)}
+                  aria-pressed={view === tab.view}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                    view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <StatusPill health={health} error={healthError} />
+              <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
+              <ThemeToggle />
+              <SignOutButton onClick={logout} />
+            </div>
           </div>
-          <nav className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setView('catalogue')}
-              aria-pressed={view === 'catalogue'}
-              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
-                view === 'catalogue' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-              }`}
-            >
-              Cat-alogue
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('owned')}
-              aria-pressed={view === 'owned'}
-              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
-                view === 'owned' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-              }`}
-            >
-              Owned
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('upcoming')}
-              aria-pressed={view === 'upcoming'}
-              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
-                view === 'upcoming' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-              }`}
-            >
-              Coming soon
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('services')}
-              aria-pressed={view === 'services'}
-              className={`min-h-11 rounded-md px-2.5 text-xs font-medium transition sm:min-h-0 sm:py-1.5 ${
-                view === 'services' ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-              }`}
-            >
-              Services
-            </button>
+          {/* Mobile-only second row: full viewport width to scroll within,
+              rather than fighting the logo/controls for leftover space. */}
+          <nav className="-mx-5 mt-2 flex items-center gap-1 overflow-x-auto px-5 sm:hidden">
+            {NAV_TABS.map((tab) => (
+              <button
+                key={tab.view}
+                type="button"
+                onClick={() => setView(tab.view)}
+                aria-pressed={view === tab.view}
+                className={`min-h-11 shrink-0 rounded-md px-2.5 text-xs font-medium transition ${
+                  view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
-          <div className="flex items-center gap-3">
-            <StatusPill health={health} error={healthError} />
-            <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
-            <ThemeToggle />
-            <SignOutButton onClick={logout} />
-          </div>
         </div>
       </header>
 
