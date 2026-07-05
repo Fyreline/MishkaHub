@@ -1305,7 +1305,6 @@ function AuthenticatedApp() {
               ))}
             </nav>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <StatusPill health={health} error={healthError} />
               <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
               <ThemeToggle />
               <SignOutButton onClick={logout} />
@@ -1372,6 +1371,9 @@ function AuthenticatedApp() {
       </main>
 
       <footer className="border-t border-line py-6 text-center font-mono text-[11px] text-ink-soft">
+        <div className="mb-3 flex justify-center">
+          <StatusPill health={health} error={healthError} />
+        </div>
         <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
         <p>Streaming availability by JustWatch. Mishka Hub is a private, non-commercial project.</p>
       </footer>
