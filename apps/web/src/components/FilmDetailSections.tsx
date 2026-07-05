@@ -80,21 +80,23 @@ export function WhereToWatchSkeleton() {
   )
 }
 
-/** Maps a column count to the static Tailwind class MoreLikeThis uses — kept
- * as explicit strings (not template interpolation) so Tailwind's scanner can
- * see them. Shared by the real grid and its skeleton so they always agree. */
-function moreLikeThisGridClass(columns: number): string {
-  return columns >= 6 ? 'grid-cols-6' : columns >= 5 ? 'grid-cols-5' : 'grid-cols-4'
-}
+/** Fixed poster width for the "More like this" horizontal-scroll row, shared
+ * by the real row and its skeleton so they always agree. Deliberately a
+ * fixed pixel width rather than a CSS-grid column fraction: the household
+ * wants this row to always stay on one line (never wrap), with smaller
+ * thumbnails than the old 4/5/6-column grid — a horizontally-scrolling flex
+ * row of fixed-width cards does that at any viewport width, including
+ * mobile, without the grid having to awkwardly shrink columns. */
+const MORE_LIKE_THIS_CARD_WIDTH = 'w-20 sm:w-24'
 
-/** Placeholder grid matching MoreLikeThisSection's real poster layout. */
-export function MoreLikeThisSkeleton({ columns = 4 }: { columns?: number }) {
+/** Placeholder row matching MoreLikeThisSection's real one-line layout. */
+export function MoreLikeThisSkeleton() {
   return (
     <div className="animate-pulse border-t border-line pt-4">
       <div className="h-4 w-24 rounded bg-paper-deep" />
-      <div className={`mt-2 grid ${moreLikeThisGridClass(columns)} gap-2`}>
+      <div className="mt-2 flex gap-2 overflow-x-hidden">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="aspect-2/3 rounded-sm bg-paper-deep" />
+          <div key={i} className={`aspect-2/3 shrink-0 rounded-sm bg-paper-deep ${MORE_LIKE_THIS_CARD_WIDTH}`} />
         ))}
       </div>
     </div>
@@ -287,23 +289,20 @@ export function MoreLikeThisSection({
   similarLoading,
   similarError,
   onNavigate,
-  columns = 4,
 }: {
   similar: SimilarFilm[]
   similarLoading: boolean
   similarError: string | null
   onNavigate: (id: number) => void
-  columns?: number
 }) {
-  const gridColsClass = moreLikeThisGridClass(columns)
   return (
     <div className="border-t border-line pt-4">
       <h4 className="text-sm font-medium text-ink">More like this</h4>
 
       {similarLoading && (
-        <div className={`mt-2 grid ${gridColsClass} gap-2`}>
+        <div className="mt-2 flex gap-2 overflow-x-hidden">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-2/3 animate-pulse rounded-sm bg-paper-deep" />
+            <div key={i} className={`aspect-2/3 shrink-0 animate-pulse rounded-sm bg-paper-deep ${MORE_LIKE_THIS_CARD_WIDTH}`} />
           ))}
         </div>
       )}
@@ -317,9 +316,19 @@ export function MoreLikeThisSection({
       )}
 
       {!similarLoading && similar.length > 0 && (
-        <div className={`mt-2 grid ${gridColsClass} gap-2`}>
+        // overflow-x-auto + no-wrap flex row: always exactly one line,
+        // scrollable sideways, regardless of viewport width or item count —
+        // the household explicitly didn't want this wrapping onto multiple
+        // rows the way the old responsive CSS grid did once there were more
+        // items than columns.
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {similar.map((s) => (
-            <button key={s.film.id} type="button" onClick={() => onNavigate(s.film.id)} className="group text-left">
+            <button
+              key={s.film.id}
+              type="button"
+              onClick={() => onNavigate(s.film.id)}
+              className={`group shrink-0 text-left ${MORE_LIKE_THIS_CARD_WIDTH}`}
+            >
               <div className="aspect-2/3 w-full overflow-hidden rounded-sm bg-paper-mid">
                 {s.film.poster ? (
                   <img

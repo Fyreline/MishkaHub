@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useSpring, useTransform } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'motion/react'
 import {
   api,
   type FilmDetail,
@@ -444,27 +444,51 @@ function FilterPill({
 // the standard bezier trick for an L-shaped rounded turn) into a flat
 // shoulder, then a tighter curve up to a sharp point at the peak.
 const BRACE_BOTTOM = 35
-const BRACE_SHOULDER = 10
+// Shoulder raised from the original 10 to 22: now that the connector is a
+// SOLID filled shape rather than a thin stroke (per the household's "solid
+// dark backdrop" request), the flat band between the shoulder and the
+// bottom edge reads as a uniform bar — the taller that band, the more the
+// whole thing looks like one flat bar instead of a shape that visibly
+// peaks toward a specific poster. Shrinking that flat band (raising
+// BRACE_SHOULDER closer to BRACE_BOTTOM) leaves more relative height for the
+// actual taper, so the peak/notch stays legible as "pointing at one poster"
+// even filled solid.
+const BRACE_SHOULDER = 22
 const BRACE_PEAK_Y = 1
 const BRACE_EDGE = 5 // inset from each side where the corner completes
-const BRACE_PEAK_OFFSET = 3.75 // x-distance from the peak where the "steep" control point sits
+const BRACE_PEAK_OFFSET = 5.5 // x-distance from the peak where the "steep" control point sits (at full width) — widened so the taper reads as a broad wedge, not a thin sliver, once filled solid
 const BRACE_SHOULDER_RATIO = 0.516 // how far along the shoulder span the gentler control point sits
 
 /** `tooth` is how "grown" the central point is, 0..~1.2: 1 = the normal full
- * peak, 0 = fully retracted flat into the shoulder line (used while the
- * connector is detached mid-switch), >1 = a springy overshoot poking slightly
- * past the poster (the liquid "wobble" as a new connection lands). The neck
- * also narrows as the tooth retracts — that's the water-tension pinch. */
+ * peak, 0 = fully retracted flat into the shoulder line (used while the old
+ * connector is detaching, or before a new one has grown in), >1 = a springy
+ * overshoot poking slightly past the poster (the liquid "wobble" as a new
+ * connection lands). The neck also narrows as the tooth retracts — that's
+ * the water-tension pinch.
+ *
+ * Peak positioning near the row's edges: rather than clamping `peakPercent`
+ * away from the true edge-poster centers (which visibly shifted the
+ * connector off-center under the first/last poster), the two half-widths
+ * around the peak are independently clamped to whatever room actually
+ * exists on that side — so a peak near x=0 gets a squashed left half and a
+ * full-width right half, and the tip still lands exactly on the true
+ * center instead of being pushed inward. */
 function bracePath(peakPercent: number, tooth = 1): string {
-  const p = Math.max(BRACE_EDGE + BRACE_PEAK_OFFSET + 2, Math.min(100 - BRACE_EDGE - BRACE_PEAK_OFFSET - 2, peakPercent))
+  const p = Math.max(0, Math.min(100, peakPercent))
   const t = Math.max(0, Math.min(1.2, tooth))
+  const maxOffset = BRACE_PEAK_OFFSET * (0.35 + 0.65 * Math.min(t, 1))
+  // Independently clamp each side's control-point offset to the room
+  // between the peak and that side's edge inset, so the curve never
+  // reaches back past its own starting edge (which would invert the shape)
+  // while still letting the peak itself sit anywhere, including x=0..100.
+  const leftOffset = Math.max(0, Math.min(maxOffset, p - BRACE_EDGE))
+  const rightOffset = Math.max(0, Math.min(maxOffset, 100 - BRACE_EDGE - p))
   const peakY = BRACE_SHOULDER - (BRACE_SHOULDER - BRACE_PEAK_Y) * t
-  const offset = BRACE_PEAK_OFFSET * (0.35 + 0.65 * Math.min(t, 1))
-  const leftSpan = p - offset - BRACE_EDGE
-  const rightSpan = 100 - BRACE_EDGE - (p + offset)
+  const leftSpan = Math.max(0, p - leftOffset - BRACE_EDGE)
+  const rightSpan = Math.max(0, 100 - BRACE_EDGE - (p + rightOffset))
   const leftCtrl1 = BRACE_EDGE + leftSpan * BRACE_SHOULDER_RATIO
-  const leftCtrl2 = p - offset
-  const rightCtrl1 = p + offset
+  const leftCtrl2 = p - leftOffset
+  const rightCtrl1 = p + rightOffset
   const rightCtrl2 = 100 - BRACE_EDGE - rightSpan * BRACE_SHOULDER_RATIO
   return [
     `M0,${BRACE_BOTTOM}`,
@@ -476,83 +500,63 @@ function bracePath(peakPercent: number, tooth = 1): string {
 }
 
 /** The connector's "switching posters" choreography, driven by the row below:
- * steady → stretch (lean toward the new poster, surface tension resisting) →
- * snap (the old connection lets go: the tooth retracts flat, a droplet falls)
- * → form (the peak springs back up at the new poster, with overshoot wobble)
- * → steady. Timings are exported to the row so its setTimeout sequencing and
- * the animations here can never drift apart. */
-type ConnectorPhase = 'steady' | 'stretch' | 'snap' | 'form'
-const SWITCH_STRETCH_MS = 210
-const SWITCH_SNAP_MS = 130
-const SWITCH_FORM_MS = 400
-/** How far (0..1) the peak leans toward the new poster before the old
- * connection gives way — less than half, so it clearly *resists* first. */
-const STRETCH_GIVE = 0.38
+ * steady → snap (the old connection detaches AT ITS OWN OLD POSITION — no
+ * lean toward the new poster first — the tooth retracts flat and a droplet
+ * falls straight down) → form (the connector jumps, with zero horizontal
+ * animation, to the new poster's position and grows/springs up from flat to
+ * full height, "joining" the poster's own ring) → steady. There is
+ * deliberately no interpolation between the old x and the new x at any
+ * point — the household was explicit that switching posters should never
+ * read as sliding sideways, only detach-in-place then reform fresh
+ * elsewhere. Timings are exported to the row so its setTimeout sequencing
+ * and the animations here can never drift apart. */
+type ConnectorPhase = 'steady' | 'snap' | 'form'
+const SWITCH_SNAP_MS = 150
+const SWITCH_FORM_MS = 380
 
 /** Links the expansion panel back to the poster it came from — edges drop
  * straight down into the panel, a rounded corner, a shoulder, then a sharp
  * point at the peak (see bracePath). Two stacked paths from the same data:
  * a panel-background fill (closed along the bottom, unstroked) that makes the
- * brace read as the panel's own body pinching up to the poster, and a bold
- * clay stroke (open, unfilled — closing it would draw a line across the
+ * brace read as the panel's own body pinching up to the poster, and a solid
+ * dark stroke (open, unfilled — closing it would draw a line across the
  * panel's borderless top edge) matching the panel's border and the expanded
- * poster's ring, so poster → neck → panel reads as one continuous outline.
- * The peak position stays spring-animated for small nudges (e.g. the column
- * count changing); actual poster switches instead run the detach/reform
- * choreography above via `phase` + `stretchPercent`. Explicit
+ * poster's ring — a near-black tone rather than the app's clay accent, per
+ * the household's reference sketch (thick dark outline, not a thin colored
+ * line), so poster → neck → panel reads as one continuous solid shape.
+ * `peakX` only ever jumps (no spring, no tween) — see the phase doc above;
+ * only `tooth` (how "grown" the peak is) animates. Explicit
  * `overflow: visible` — the shape's ends sit right at the SVG's own
  * bounding-box edge and would get clipped there otherwise. */
-function BraceConnector({
-  peakPercent,
-  stretchPercent,
-  phase,
-}: {
-  peakPercent: number
-  stretchPercent: number | null
-  phase: ConnectorPhase
-}) {
-  const peakX = useSpring(peakPercent, { stiffness: 260, damping: 32 })
+function BraceConnector({ peakPercent, phase }: { peakPercent: number; phase: ConnectorPhase }) {
+  const peakX = useMotionValue(peakPercent)
   // Starts at 0 so opening the panel grows the tooth up toward the poster
   // (the connection "forming") rather than popping in fully drawn.
   const tooth = useMotionValue(0)
 
   useEffect(() => {
     if (phase === 'steady') {
-      peakX.set(peakPercent)
+      peakX.jump(peakPercent)
       const anim = animate(tooth, 1, { type: 'spring', stiffness: 320, damping: 22 })
       return () => anim.stop()
     }
-    if (phase === 'stretch' && stretchPercent != null) {
-      // Lean partway toward the new poster; the tip flattens slightly as it
-      // strains — stretched liquid thins before it lets go.
-      peakX.set(peakPercent + (stretchPercent - peakPercent) * STRETCH_GIVE)
-      const anim = animate(tooth, 0.8, { duration: SWITCH_STRETCH_MS / 1000, ease: 'easeOut' })
-      return () => anim.stop()
-    }
     if (phase === 'snap') {
-      // Accelerating retract — tension released, the neck snaps back flat.
+      // Old connection detaches right where it already was — no horizontal
+      // motion at all — the neck just snaps back flat, tension released.
       const anim = animate(tooth, 0, { duration: SWITCH_SNAP_MS / 1000, ease: [0.7, 0, 0.85, 0.4] })
       return () => anim.stop()
     }
-    // 'form': teleport the (currently flat, so invisible) peak to the new
-    // poster, then spring the tooth back up with a deliberate overshoot
-    // wobble — the new drop of liquid catching hold.
+    // 'form': the peak is currently flat (invisible height-wise), so jumping
+    // its x to the new poster here is unnoticeable — then spring the tooth
+    // back up with a deliberate overshoot wobble, growing fresh at the new
+    // spot with zero tie back to the old one.
     peakX.jump(peakPercent)
     const anim = animate(tooth, 1, { type: 'spring', stiffness: 430, damping: 15 })
     return () => anim.stop()
-  }, [phase, peakPercent, stretchPercent, peakX, tooth])
+  }, [phase, peakPercent, peakX, tooth])
 
   const dStroke = useTransform([peakX, tooth] as const, ([p, t]: number[]) => bracePath(p, t))
   const dFill = useTransform([peakX, tooth] as const, ([p, t]: number[]) => `${bracePath(p, t)} Z`)
-
-  // Where the droplet detaches from: the stretched peak position, captured at
-  // the moment the snap starts (during 'form' the peak has already jumped to
-  // the new poster, so it can't be read live — the ref keeps the old spot
-  // while the droplet finishes falling).
-  const dropLeftRef = useRef('50%')
-  if (phase === 'snap' && stretchPercent != null) {
-    dropLeftRef.current = `${peakPercent + (stretchPercent - peakPercent) * STRETCH_GIVE}%`
-  }
 
   return (
     <div className="relative">
@@ -561,17 +565,17 @@ function BraceConnector({
         preserveAspectRatio="none"
         aria-hidden
         style={{ overflow: 'visible' }}
-        className="pointer-events-none h-9 w-full text-clay"
+        className="pointer-events-none h-9 w-full text-ink"
       >
-        <motion.path d={dFill} fill="var(--color-paper-mid)" stroke="none" />
+        <motion.path d={dFill} fill="currentColor" stroke="none" />
         <motion.path d={dStroke} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </svg>
-      {(phase === 'snap' || phase === 'form') && (
+      {phase === 'snap' && (
         <motion.span
           key="droplet"
           aria-hidden
-          className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-clay"
-          style={{ left: dropLeftRef.current, x: '-50%' }}
+          className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-ink"
+          style={{ left: `${peakPercent}%`, x: '-50%' }}
           initial={{ y: 2, opacity: 0.9, scale: 1 }}
           animate={{ y: 26, opacity: 0, scale: 0.5 }}
           transition={{ duration: 0.32, ease: 'easeIn' }}
@@ -663,10 +667,12 @@ function RecommendationExpansionPanel({
       }}
       style={{ transformOrigin: `${originPercent}% 0%` }}
       // Border on the sides + bottom only (no top) — same 2px weight and
-      // clay color as the brace's stroke and the expanded poster's ring, so
-      // poster → connector → box reads as one continuous outlined shape
-      // rather than three separate elements.
-      className="relative overflow-hidden rounded-xl border-x-2 border-b-2 border-clay bg-paper-mid p-4 sm:p-6"
+      // solid dark (ink) color as the brace's stroke/fill and the expanded
+      // poster's ring, per the household's reference sketch (thick dark
+      // outline, not the app's clay accent) — poster → connector → box reads
+      // as one continuous solid dark shape rather than three separate
+      // elements.
+      className="relative overflow-hidden rounded-xl border-x-2 border-b-2 border-ink bg-paper-mid p-4 sm:p-6"
     >
       <button
         type="button"
@@ -688,7 +694,7 @@ function RecommendationExpansionPanel({
             <WhereToWatchSkeleton />
           </div>
           <div className="mt-4">
-            <MoreLikeThisSkeleton columns={6} />
+            <MoreLikeThisSkeleton />
           </div>
         </div>
       )}
@@ -871,7 +877,6 @@ function RecommendationExpansionPanel({
               similarLoading={similarLoading}
               similarError={similarError}
               onNavigate={onOpenOverlay}
-              columns={6}
             />
           </div>
         </div>
@@ -971,20 +976,22 @@ function UnseenRecommendationsRow() {
       setExpanded(null)
       return
     }
-    // Switching to a different poster: stretch → snap → commit + re-form.
+    // Switching to a different poster: the OLD connector detaches in place
+    // (snap — no lean toward the new target beforehand), then a NEW one
+    // grows in fresh at the new poster's position (form) — no horizontal
+    // interpolation ties the two together at any point. `switchTarget` is
+    // set immediately so the newly-clicked poster's ring/highlight appears
+    // right away, ahead of the panel content swap.
     setSwitchTarget({ filmId, index })
-    setConnectorPhase('stretch')
-    switchTimers.current.push(window.setTimeout(() => setConnectorPhase('snap'), SWITCH_STRETCH_MS))
+    setConnectorPhase('snap')
     switchTimers.current.push(
       window.setTimeout(() => {
         setExpanded({ filmId, index })
         setSwitchTarget(null)
         setConnectorPhase('form')
-      }, SWITCH_STRETCH_MS + SWITCH_SNAP_MS),
+      }, SWITCH_SNAP_MS),
     )
-    switchTimers.current.push(
-      window.setTimeout(() => setConnectorPhase('steady'), SWITCH_STRETCH_MS + SWITCH_SNAP_MS + SWITCH_FORM_MS),
-    )
+    switchTimers.current.push(window.setTimeout(() => setConnectorPhase('steady'), SWITCH_SNAP_MS + SWITCH_FORM_MS))
   }
 
   return (
@@ -1095,11 +1102,7 @@ function UnseenRecommendationsRow() {
         <AnimatePresence>
           {expanded && (
             <div key="expansion">
-              <BraceConnector
-                peakPercent={((expanded.index + 0.5) / columns) * 100}
-                stretchPercent={switchTarget ? ((switchTarget.index + 0.5) / columns) * 100 : null}
-                phase={connectorPhase}
-              />
+              <BraceConnector peakPercent={((expanded.index + 0.5) / columns) * 100} phase={connectorPhase} />
               <RecommendationExpansionPanel
                 filmId={expanded.filmId}
                 originPercent={((expanded.index + 0.5) / columns) * 100}

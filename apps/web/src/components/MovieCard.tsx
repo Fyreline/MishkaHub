@@ -29,8 +29,10 @@ export function MovieCard({
   badges?: CatalogueBadgeInfo
   onClick?: () => void
   /** True while this card's expansion panel is open below the grid — draws a
-   * bolder clay outline matching the brace connector's stroke, so the poster,
-   * the connector and the panel read as one continuous outlined shape. */
+   * bold solid-dark (ink) outline matching the brace connector's stroke/fill,
+   * so the poster, the connector and the panel read as one continuous solid
+   * dark shape (per the household's reference sketch) rather than the app's
+   * clay accent color. */
   expanded?: boolean
 }) {
   const rating = badges?.myRating != null
@@ -113,7 +115,7 @@ export function MovieCard({
         type="button"
         onClick={onClick}
         className={`group relative aspect-2/3 w-full overflow-hidden rounded-sm border bg-paper-mid text-left transition-transform duration-75 ease-out active:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 ${
-          expanded ? 'border-clay ring-2 ring-clay' : 'border-line'
+          expanded ? 'border-ink ring-2 ring-ink' : 'border-line'
         }`}
       >
         <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
@@ -138,7 +140,7 @@ export function MovieCard({
         touchAction: 'pan-y',
       }}
       className={`group relative z-0 aspect-2/3 w-full origin-center overflow-hidden rounded-sm border bg-paper-mid text-left [transform-style:preserve-3d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay focus-visible:ring-offset-2 hover:z-10 focus-visible:z-10 ${
-        expanded ? 'border-clay ring-2 ring-clay' : 'border-line'
+        expanded ? 'border-ink ring-2 ring-ink' : 'border-line'
       }`}
     >
       <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
