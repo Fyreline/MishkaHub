@@ -1,0 +1,66 @@
+name: Deploy web to GitHub Pages
+
+# docs/DEPLOYMENT.md §1 — builds apps/web and publishes it to GitHub Pages.
+# Requires (repo Settings, one-time, done by the household — see DEPLOYMENT.md):
+#   1. Settings -> Pages -> Source: GitHub Actions.
+#   2. If this repo is private, GitHub Pages needs GitHub Pro/Team/Enterprise —
+#      the free plan only serves Pages from public repos.
+#   3. Settings -> Secrets and variables -> Actions -> New repository variable:
+#      VITE_API_BASE = the Cloudflare Tunnel hostname for the backend, e.g.
+#      https://mishka-api.example.com (leave unset and the deployed site
+#      falls back to the api.ts default of http://127.0.0.1:8000, which
+#      obviously won't reach anything from a browser that isn't on the same
+#      machine — set this before relying on the deployed site).
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/web/**', '.github/workflows/deploy-web.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+        env:
+          VITE_BASE: /MishkaHub/
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+      # SPA fallback: this app has no client-side routing/deep links today
+      # (all navigation is tab state within one page), but a 404.html copy
+      # is cheap insurance if that changes later — GitHub Pages serves it
+      # for any path with no matching file.
+      - run: cp dist/index.html dist/404.html
+        working-directory: apps/web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

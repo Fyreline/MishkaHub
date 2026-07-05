@@ -2,67 +2,44 @@
 
 Purpose: the runbook for putting Mishka Hub in production and keeping it there: GitHub Pages for the SPA, Cloudflare Tunnel + launchd for the Mac-hosted API, CORS wiring between the two, and SQLite backups. Written to be executed top-to-bottom on a fresh setup and consulted piecemeal later. Topology rationale: [ARCHITECTURE.md](ARCHITECTURE.md) §4.
 
-**Status: planned**
+**Status: §1 (Pages workflow) shipped 2026-07-05 — real `.github/workflows/deploy-web.yml` in
+the repo, not just this sketch. §2-§4 (Cloudflare Tunnel, launchd service, backups) are still
+this doc's plan, not yet executed on the household's Mac — those need the household's own
+Cloudflare account/domain and can't be done from an assistant session.**
 
 ---
 
 ## 1. Frontend → GitHub Pages
 
-### 1a. Repo setup
+### 1a. Repo setup (manual, one-time — do this yourself)
 
-1. Push the repo to GitHub (`<user>/mishka-hub`, private is fine — Pages works on private repos for public sites on free plans only if the repo is public; if keeping the repo private requires it, a public *deploy-only* repo or GitHub Pro is the workaround — decide at setup ⚠️).
-2. Repo → Settings → Pages → Source: **GitHub Actions**.
-3. The app will live at `https://<user>.github.io/mishka-hub/` (project site) → build with `VITE_BASE=/mishka-hub/` (already supported by `apps/web/vite.config.ts`).
+1. This repo (`Fyreline/MishkaHub`) is already private. **GitHub Pages only serves sites from
+   private repos on paid plans (Pro/Team/Enterprise)** — the free plan requires the repo to be
+   public. If you want to keep the repo private *and* use Pages, upgrade the account that owns
+   it to GitHub Pro (or move Pages to a separate public deploy-only repo, but a paid plan is
+   simpler and is what you said you'd rather do).
+2. Repo → **Settings → Pages → Source: GitHub Actions.**
+3. Repo → **Settings → Secrets and variables → Actions → Variables → New repository variable:**
+   `VITE_API_BASE` = your Cloudflare Tunnel hostname once §2 below is set up (e.g.
+   `https://mishka-api.example.com`). Until this is set, the deployed site falls back to
+   `http://127.0.0.1:8000`, which won't reach anything from a browser that isn't on the same Mac.
+4. Push to `main` — the workflow builds and deploys automatically. The app will live at
+   `https://fyreline.github.io/MishkaHub/` (`VITE_BASE=/MishkaHub/` is already baked into the
+   workflow to match this repo's actual name/case).
 
 ### 1b. Actions workflow
 
-`.github/workflows/deploy-web.yml` (uses the official Pages actions — [upload-pages-artifact](https://github.com/actions/upload-pages-artifact), [deploy-pages](https://github.com/actions/deploy-pages)):
-
-```yaml
-name: Deploy web to GitHub Pages
-on:
-  push:
-    branches: [main]
-    paths: ['apps/web/**', '.github/workflows/deploy-web.yml']
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write        # create Pages deployment
-  id-token: write     # OIDC for deploy-pages
-
-concurrency: { group: pages, cancel-in-progress: true }
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json }
-      - run: npm ci
-        working-directory: apps/web
-      - run: npm run build
-        working-directory: apps/web
-        env:
-          VITE_BASE: /mishka-hub/
-          VITE_API_BASE: https://mishka-api.example.com   # the tunnel hostname (§2)
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with: { path: apps/web/dist }
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: { name: github-pages, url: ${{ steps.deployment.outputs.page_url }} }
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
+`.github/workflows/deploy-web.yml` (real file in the repo; uses the official Pages actions —
+[upload-pages-artifact](https://github.com/actions/upload-pages-artifact),
+[deploy-pages](https://github.com/actions/deploy-pages)) — triggers on push to `main` when
+`apps/web/**` changes, builds with `VITE_BASE=/MishkaHub/` and the `VITE_API_BASE` repo
+variable from §1a step 3, copies `index.html` to `404.html` for SPA-fallback insurance (this
+app has no client-side routing today, so this is cheap future-proofing rather than something
+currently load-bearing), and deploys via the standard Pages Actions.
 
 Notes:
-- `VITE_API_BASE` is baked at build time (`apps/web/src/api.ts` reads it); changing the tunnel hostname means one-line edit + push.
-- SPA deep-link 404s: GitHub Pages serves `404.html` — copy `index.html` to `404.html` in the build step when client-side routing lands (`cp dist/index.html dist/404.html`).
-- **Custom domain (optional):** Settings → Pages → custom domain `films.example.com` + a `CNAME` DNS record to `<user>.github.io`; then `VITE_BASE=/` and add the origin to CORS (§3). Since the API domain is on Cloudflare anyway, keeping both app + API on one apex is tidy.
+- `VITE_API_BASE` is baked at build time (`apps/web/src/api.ts` reads it); changing the tunnel hostname means updating the repo variable and re-running the workflow (or pushing any `apps/web/**` change).
+- **Custom domain (optional):** Settings → Pages → custom domain `films.example.com` + a `CNAME` DNS record to `fyreline.github.io`; then set `VITE_BASE=/` in the workflow and add the custom-domain origin to `cors_origins` (§3). Since the API domain would be on Cloudflare anyway, keeping both app + API on one apex is tidy.
 
 ## 2. Backend → Cloudflare Tunnel (named) on macOS
 
@@ -133,15 +110,19 @@ launchctl kickstart -k gui/$(id -u)/com.mishka-hub.api    # restart after deploy
 
 Pre-flight inside the service (wrap uvicorn in a small `run.sh` once migrations exist): `alembic upgrade head && exec uvicorn …` — see [DATA_MODEL.md](DATA_MODEL.md) §4. Note for [Phase 5](phases/PHASE-5-letterboxd-writeback.md): the LaunchAgent user session gives Playwright + macOS Keychain access; run `playwright install chromium` once as that user. Prevent sleep: System Settings → Energy → prevent automatic sleeping on power, or `sudo pmset -a sleep 0`.
 
-**CORS:** add the Pages origin in `apps/server/.env` (origins are the scheme+host, no path):
+**CORS:** `https://fyreline.github.io` is already baked into `config.py`'s `cors_origins`
+default (origins are scheme+host only, no path — this one entry covers the
+`https://fyreline.github.io/MishkaHub/` project site regardless of the `/MishkaHub/` part), so
+nothing needs to be set for the plain Pages URL to work. Override entirely via
+`MISHKA_CORS_ORIGINS` in `apps/server/.env` only if you add a custom domain later:
 
 ```bash
-MISHKA_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","https://<user>.github.io"]
+MISHKA_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","https://fyreline.github.io","https://films.example.com"]
 ```
 
-(Custom-domain variant adds `https://films.example.com`.) Restart the service. Verify from the Pages site: the status pill goes green (health check crosses origins), then a search round-trips.
+Restart the service after changing it. Verify from the Pages site: the status pill goes green (health check crosses origins), then a search round-trips.
 
-**Server env checklist (`apps/server/.env`):** `MISHKA_TMDB_READ_TOKEN`, `MISHKA_REGION=GB`, `MISHKA_LANGUAGE=en-GB`, `MISHKA_CORS_ORIGINS=[…]`, `MISHKA_JWT_SECRET` (Phase 4), `MISHKA_DEV_TOKEN` (interim, Phases 2–3), `MISHKA_JELLYFIN_URL`/`_API_KEY` (Phase 7), `MISHKA_ENVIRONMENT=production`.
+**Server env checklist (`apps/server/.env`):** `MISHKA_TMDB_READ_TOKEN`, `MISHKA_REGION=GB`, `MISHKA_LANGUAGE=en-GB`, `MISHKA_JWT_SECRET` (Phase 4 — required for login to work), `MISHKA_CORS_ORIGINS=[…]` (only if overriding the built-in default above), `MISHKA_JELLYFIN_URL`/`_API_KEY` (Phase 7), `MISHKA_ENVIRONMENT=production`.
 
 ## 4. SQLite backup strategy
 

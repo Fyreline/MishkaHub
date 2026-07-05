@@ -33,11 +33,15 @@ class Settings(BaseSettings):
     region: str = "GB"
     language: str = "en-GB"
 
-    # --- CORS. Add the GitHub Pages origin here once it's live, e.g.
-    # ["https://<user>.github.io"]. Override via MISHKA_CORS_ORIGINS as a JSON list. ---
+    # --- CORS. CORS origins are scheme+host only (no path) — the deployed
+    # Pages *project* site at https://fyreline.github.io/MishkaHub/ still has
+    # origin https://fyreline.github.io, matching the entry below regardless
+    # of the /MishkaHub/ path. Override entirely via MISHKA_CORS_ORIGINS as a
+    # JSON list (e.g. to add a custom domain later). ---
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://fyreline.github.io",
     ]
 
     # SQLite lives in the project-level data/ folder (CWD-independent absolute path).
