@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'motion/react'
 import {
   api,
@@ -437,151 +437,143 @@ function FilterPill({
 // to a shoulder hump, then a tighter, steeper curve to a sharp point at the
 // peak (mirrored on the right) — the shape an actual "{" has (two curves
 // plus a distinct central tooth), not a single smooth arc.
-// Coordinates below match a hand-tuned reference the household provided
-// (devtools-edited to get the feel right, then generalized here so it works
-// for any peak position, not just the one x=43.75 example): ends drop
-// straight down into the panel, a rounded corner (duplicate control point —
-// the standard bezier trick for an L-shaped rounded turn) into a flat
-// shoulder, then a tighter curve up to a sharp point at the peak.
-const BRACE_BOTTOM = 35
-// Shoulder raised from the original 10 to 22: now that the connector is a
-// SOLID filled shape rather than a thin stroke (per the household's "solid
-// dark backdrop" request), the flat band between the shoulder and the
-// bottom edge reads as a uniform bar — the taller that band, the more the
-// whole thing looks like one flat bar instead of a shape that visibly
-// peaks toward a specific poster. Shrinking that flat band (raising
-// BRACE_SHOULDER closer to BRACE_BOTTOM) leaves more relative height for the
-// actual taper, so the peak/notch stays legible as "pointing at one poster"
-// even filled solid.
-const BRACE_SHOULDER = 22
-const BRACE_PEAK_Y = 1
-const BRACE_EDGE = 5 // inset from each side where the corner completes
-const BRACE_PEAK_OFFSET = 5.5 // x-distance from the peak where the "steep" control point sits (at full width) — widened so the taper reads as a broad wedge, not a thin sliver, once filled solid
-const BRACE_SHOULDER_RATIO = 0.516 // how far along the shoulder span the gentler control point sits
+// ---------------------------------------------------------------------------
+// Liquid connector — one continuous ink surface tying the expanded poster to
+// its detail panel, per the household's reference: the poster sits in a dark
+// halo (drawn by MovieCard), the halo pinches down through a wide hourglass
+// neck (drawn here), and the neck flows into a solid mat that frames the
+// whole panel (drawn at the call site). Everything is a FILL — the previous
+// design mixed a stroked outline with the panel's border, and the seam where
+// stroke met border always read as an ugly cutoff line. Fills of the same
+// color simply merge.
+//
+// All geometry is in real pixels, measured off the live grid (see
+// `expandedMetrics` in the row component) — the old percent-based viewBox
+// with preserveAspectRatio="none" distorted curves and made edge-poster
+// centering a constant fight.
+// ---------------------------------------------------------------------------
+const NECK_H = 44 // px height of the neck region between poster row and mat
+const HALO_PAD = 8 // how far the halo extends past the poster's sides; must match MovieCard's -inset-x-2
+const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
 
-/** `tooth` is how "grown" the central point is, 0..~1.2: 1 = the normal full
- * peak, 0 = fully retracted flat into the shoulder line (used while the old
- * connector is detaching, or before a new one has grown in), >1 = a springy
- * overshoot poking slightly past the poster (the liquid "wobble" as a new
- * connection lands). The neck also narrows as the tooth retracts — that's
- * the water-tension pinch.
- *
- * Peak positioning near the row's edges: rather than clamping `peakPercent`
- * away from the true edge-poster centers (which visibly shifted the
- * connector off-center under the first/last poster), the two half-widths
- * around the peak are independently clamped to whatever room actually
- * exists on that side — so a peak near x=0 gets a squashed left half and a
- * full-width right half, and the tip still lands exactly on the true
- * center instead of being pushed inward. */
-function bracePath(peakPercent: number, tooth = 1): string {
-  const p = Math.max(0, Math.min(100, peakPercent))
-  const t = Math.max(0, Math.min(1.2, tooth))
-  const maxOffset = BRACE_PEAK_OFFSET * (0.35 + 0.65 * Math.min(t, 1))
-  // Independently clamp each side's control-point offset to the room
-  // between the peak and that side's edge inset, so the curve never
-  // reaches back past its own starting edge (which would invert the shape)
-  // while still letting the peak itself sit anywhere, including x=0..100.
-  const leftOffset = Math.max(0, Math.min(maxOffset, p - BRACE_EDGE))
-  const rightOffset = Math.max(0, Math.min(maxOffset, 100 - BRACE_EDGE - p))
-  const peakY = BRACE_SHOULDER - (BRACE_SHOULDER - BRACE_PEAK_Y) * t
-  const leftSpan = Math.max(0, p - leftOffset - BRACE_EDGE)
-  const rightSpan = Math.max(0, 100 - BRACE_EDGE - (p + rightOffset))
-  const leftCtrl1 = BRACE_EDGE + leftSpan * BRACE_SHOULDER_RATIO
-  const leftCtrl2 = p - leftOffset
-  const rightCtrl1 = p + rightOffset
-  const rightCtrl2 = 100 - BRACE_EDGE - rightSpan * BRACE_SHOULDER_RATIO
+/** `grow` is how formed the neck is, 0..~1.2: 0 = fully melted flat into the
+ * mat (while the old connection detaches, or before a new one rises), 1 =
+ * resting shape, >1 = a springy overshoot poking up behind the poster halo
+ * (hidden there — same color, and the grid stacks above). The waist pinch
+ * and bottom flare both scale with growth, so the neck rises as a column and
+ * relaxes into the hourglass as it lands. */
+function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: number): string {
+  const t = Math.max(0, Math.min(1.2, growRaw))
+  const reach = Math.min(t, 1)
+  const topHW = posterW / 2 + HALO_PAD // neck top half-width == halo half-width
+  const topY = NECK_H * (1 - t)
+  const bottomY = NECK_H + 2 // draw 2px into the mat so the seam can't anti-alias into a hairline
+  const pinch = Math.min(10, topHW * 0.25) * reach // waist inset — the liquid-glass "held together" squeeze
+  const flare = (26 + topHW * 0.3) * reach // how far the base spreads as it merges into the mat
+  const leftTop = centerX - topHW
+  const rightTop = centerX + topHW
+  // Clamp the base inside the mat's rounded corners; for edge posters the
+  // near side simply lands closer to (or leans back from) the halo above it.
+  const leftBottom = Math.max(leftTop - flare, MAT_RADIUS)
+  const rightBottom = Math.min(rightTop + flare, rowW - MAT_RADIUS)
+  const midY = topY + (bottomY - topY) * 0.5
   return [
-    `M0,${BRACE_BOTTOM}`,
-    `C0,${BRACE_SHOULDER} 0,${BRACE_SHOULDER} ${BRACE_EDGE},${BRACE_SHOULDER}`,
-    `C${leftCtrl1},${BRACE_SHOULDER} ${leftCtrl2},${BRACE_SHOULDER} ${p},${peakY}`,
-    `C${rightCtrl1},${BRACE_SHOULDER} ${rightCtrl2},${BRACE_SHOULDER} ${100 - BRACE_EDGE},${BRACE_SHOULDER}`,
-    `C100,${BRACE_SHOULDER} 100,${BRACE_SHOULDER} 100,${BRACE_BOTTOM}`,
+    `M${leftTop},${topY}`,
+    // Sides start near-vertical under the halo, bow inward at the waist,
+    // then land horizontal on the mat — concave the whole way down, which is
+    // what makes it read as liquid rather than a funnel.
+    `C${leftTop + pinch},${midY} ${leftBottom + (leftTop - leftBottom) * 0.35},${bottomY} ${leftBottom},${bottomY}`,
+    `L${rightBottom},${bottomY}`,
+    `C${rightBottom - (rightBottom - rightTop) * 0.35},${bottomY} ${rightTop - pinch},${midY} ${rightTop},${topY}`,
+    'Z',
   ].join(' ')
 }
 
 /** The connector's "switching posters" choreography, driven by the row below:
  * steady → snap (the old connection detaches AT ITS OWN OLD POSITION — no
- * lean toward the new poster first — the tooth retracts flat and a droplet
- * falls straight down) → form (the connector jumps, with zero horizontal
- * animation, to the new poster's position and grows/springs up from flat to
- * full height, "joining" the poster's own ring) → steady. There is
- * deliberately no interpolation between the old x and the new x at any
- * point — the household was explicit that switching posters should never
- * read as sliding sideways, only detach-in-place then reform fresh
- * elsewhere. Timings are exported to the row so its setTimeout sequencing
- * and the animations here can never drift apart. */
+ * lean toward the new poster first — the neck melts flat into the mat and a
+ * droplet falls straight down) → form (the connector jumps, with zero
+ * horizontal animation, to the new poster's position and rises from flat to
+ * full height, joining the poster's halo) → steady. There is deliberately no
+ * interpolation between the old x and the new x at any point — the household
+ * was explicit that switching posters should never read as sliding sideways,
+ * only detach-in-place then reform fresh elsewhere. Timings are exported to
+ * the row so its setTimeout sequencing and the animations here can never
+ * drift apart. */
 type ConnectorPhase = 'steady' | 'snap' | 'form'
 const SWITCH_SNAP_MS = 150
 const SWITCH_FORM_MS = 380
 
-/** Links the expansion panel back to the poster it came from — edges drop
- * straight down into the panel, a rounded corner, a shoulder, then a sharp
- * point at the peak (see bracePath). Two stacked paths from the same data:
- * a panel-background fill (closed along the bottom, unstroked) that makes the
- * brace read as the panel's own body pinching up to the poster, and a solid
- * dark stroke (open, unfilled — closing it would draw a line across the
- * panel's borderless top edge) matching the panel's border and the expanded
- * poster's ring — a near-black tone rather than the app's clay accent, per
- * the household's reference sketch (thick dark outline, not a thin colored
- * line), so poster → neck → panel reads as one continuous solid shape.
- * `peakX` only ever jumps (no spring, no tween) — see the phase doc above;
- * only `tooth` (how "grown" the peak is) animates. Explicit
- * `overflow: visible` — the shape's ends sit right at the SVG's own
- * bounding-box edge and would get clipped there otherwise. */
-function BraceConnector({ peakPercent, phase }: { peakPercent: number; phase: ConnectorPhase }) {
-  const peakX = useMotionValue(peakPercent)
-  // Starts at 0 so opening the panel grows the tooth up toward the poster
+/** The hourglass neck between the expanded poster's halo and the panel's mat
+ * (see liquidPath). `cx` only ever jumps (no spring, no tween) — see the
+ * phase doc above; only `grow` animates. `display: block` on the svg matters:
+ * an inline svg sits on the text baseline, which opens a few px of paper
+ * between the neck and the mat — exactly the kind of stray line this
+ * redesign exists to kill. Explicit `overflow: visible` because the
+ * overshoot pokes above the svg's own box (hidden behind the halo/grid). */
+function LiquidConnector({
+  rowW,
+  centerX,
+  posterW,
+  phase,
+}: {
+  rowW: number
+  centerX: number
+  posterW: number
+  phase: ConnectorPhase
+}) {
+  const cx = useMotionValue(centerX)
+  // Starts at 0 so opening the panel grows the neck up toward the poster
   // (the connection "forming") rather than popping in fully drawn.
-  const tooth = useMotionValue(0)
+  const grow = useMotionValue(0)
 
   useEffect(() => {
     if (phase === 'steady') {
-      peakX.jump(peakPercent)
-      const anim = animate(tooth, 1, { type: 'spring', stiffness: 320, damping: 22 })
+      cx.jump(centerX)
+      const anim = animate(grow, 1, { type: 'spring', stiffness: 320, damping: 22 })
       return () => anim.stop()
     }
     if (phase === 'snap') {
       // Old connection detaches right where it already was — no horizontal
-      // motion at all — the neck just snaps back flat, tension released.
-      const anim = animate(tooth, 0, { duration: SWITCH_SNAP_MS / 1000, ease: [0.7, 0, 0.85, 0.4] })
+      // motion at all — the neck just melts back into the mat, tension released.
+      const anim = animate(grow, 0, { duration: SWITCH_SNAP_MS / 1000, ease: [0.7, 0, 0.85, 0.4] })
       return () => anim.stop()
     }
-    // 'form': the peak is currently flat (invisible height-wise), so jumping
-    // its x to the new poster here is unnoticeable — then spring the tooth
-    // back up with a deliberate overshoot wobble, growing fresh at the new
-    // spot with zero tie back to the old one.
-    peakX.jump(peakPercent)
-    const anim = animate(tooth, 1, { type: 'spring', stiffness: 430, damping: 15 })
+    // 'form': the neck is currently flat (invisible height-wise), so jumping
+    // its x to the new poster here is unnoticeable — then spring back up with
+    // a deliberate overshoot wobble, rising fresh at the new spot with zero
+    // tie back to the old one.
+    cx.jump(centerX)
+    const anim = animate(grow, 1, { type: 'spring', stiffness: 400, damping: 16 })
     return () => anim.stop()
-  }, [phase, peakPercent, peakX, tooth])
+  }, [phase, centerX, cx, grow])
 
-  const dStroke = useTransform([peakX, tooth] as const, ([p, t]: number[]) => bracePath(p, t))
-  const dFill = useTransform([peakX, tooth] as const, ([p, t]: number[]) => `${bracePath(p, t)} Z`)
+  const d = useTransform([cx, grow] as const, ([x, g]: number[]) => liquidPath(rowW, x, posterW, g))
 
   return (
-    <div className="relative">
+    <motion.div className="relative" exit={{ opacity: 0, transition: { duration: 0.12 } }}>
       <svg
-        viewBox={`0 0 100 ${BRACE_BOTTOM}`}
-        preserveAspectRatio="none"
+        width="100%"
+        height={NECK_H}
+        viewBox={`0 0 ${rowW} ${NECK_H}`}
         aria-hidden
         style={{ overflow: 'visible' }}
-        className="pointer-events-none h-9 w-full text-ink"
+        className="pointer-events-none block text-ink"
       >
-        <motion.path d={dFill} fill="currentColor" stroke="none" />
-        <motion.path d={dStroke} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <motion.path d={d} fill="currentColor" />
       </svg>
       {phase === 'snap' && (
         <motion.span
           key="droplet"
           aria-hidden
           className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-ink"
-          style={{ left: `${peakPercent}%`, x: '-50%' }}
-          initial={{ y: 2, opacity: 0.9, scale: 1 }}
-          animate={{ y: 26, opacity: 0, scale: 0.5 }}
+          style={{ left: centerX, x: '-50%' }}
+          initial={{ y: 4, opacity: 0.9, scale: 1 }}
+          animate={{ y: 30, opacity: 0, scale: 0.5 }}
           transition={{ duration: 0.32, ease: 'easeIn' }}
         />
       )}
-    </div>
+    </motion.div>
   )
 }
 
@@ -598,16 +590,11 @@ function BraceConnector({ peakPercent, phase }: { peakPercent: number; phase: Co
  * useFilmDetail + FilmDetailSections; only the shell differs. */
 function RecommendationExpansionPanel({
   filmId,
-  originPercent,
   onNavigate,
   onClose,
   onOpenOverlay,
 }: {
   filmId: number
-  /** Horizontal position (0–100) of the brace peak / clicked poster — the
-   * panel's open/close scaling is anchored here so it visibly expands out
-   * from the poster it belongs to, not from its own dead center. */
-  originPercent: number
   onNavigate: (id: number) => void
   onClose: () => void
   /** "More like this" opens the full movie overlay on top, rather than
@@ -650,35 +637,12 @@ function RecommendationExpansionPanel({
   } = useFilmDetail(filmId, onNavigate)
 
   return (
-    <motion.div
-      // Drops down and expands open from the brace peak (transform origin is
-      // the clicked poster's x, at the panel's top edge) — a compressed
-      // scaleY unfolding downward plus a small drop, on a spring so it lands
-      // with a hint of settle rather than a linear slide.
-      initial={{ opacity: 0, y: -16, scaleY: 0.72, scaleX: 0.98 }}
-      animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
-      exit={{ opacity: 0, y: -12, scaleY: 0.9, transition: { duration: 0.16, ease: 'easeIn' } }}
-      transition={{
-        type: 'spring',
-        stiffness: 340,
-        damping: 28,
-        mass: 0.9,
-        opacity: { duration: 0.18, ease: 'easeOut' },
-      }}
-      style={{ transformOrigin: `${originPercent}% 0%` }}
-      // Border on the sides + bottom only (no top) — same 2px weight and
-      // solid dark (ink) color as the brace's stroke/fill and the expanded
-      // poster's ring, per the household's reference sketch (thick dark
-      // outline, not the app's clay accent) — poster → connector → box reads
-      // as one continuous solid dark shape rather than three separate
-      // elements. Top corners deliberately square (rounded-b-xl, not
-      // rounded-xl): the brace's fill/stroke above this panel has a flat,
-      // square-cornered bottom edge (BRACE_BOTTOM), so rounding the panel's
-      // top corners left a sliver of background peeking through at each
-      // corner where the round curve pulled away from the brace's square
-      // edge — squaring them off makes the two flush, no seam.
-      className="relative overflow-hidden rounded-b-xl border-x-2 border-b-2 border-ink bg-paper-mid p-4 sm:p-6"
-    >
+    // No border, no motion of its own — the panel sits nestled inside the
+    // mat (the solid ink frame at the call site), which carries both the
+    // entrance animation and the dark surround. Concentric radii: the mat is
+    // rounded-2xl, this inner surface rounded-xl, so the frame reads as one
+    // even band all the way around.
+    <div className="relative overflow-hidden rounded-xl bg-paper-mid p-4 sm:p-6">
       <button
         type="button"
         onClick={onClose}
@@ -886,7 +850,7 @@ function RecommendationExpansionPanel({
           </div>
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }
 
@@ -910,14 +874,47 @@ function UnseenRecommendationsRow() {
   const [expanded, setExpanded] = useState<{ filmId: number; index: number } | null>(null)
   const [overlayFilmId, setOverlayFilmId] = useState<number | null>(null)
 
-  // Poster-switch choreography (see BraceConnector): while a switch is in
+  // Poster-switch choreography (see LiquidConnector): while a switch is in
   // flight, `expanded` still points at the OLD film (its panel + connector
-  // stay up through the stretch and snap beats) and `switchTarget` holds the
-  // new one; the timers below advance the phases and finally commit the
-  // target. Any new click cancels the in-flight sequence first.
+  // stay up through the snap beat) and `switchTarget` holds the new one; the
+  // timers below advance the phases and finally commit the target. Any new
+  // click cancels the in-flight sequence first.
   const [switchTarget, setSwitchTarget] = useState<{ filmId: number; index: number } | null>(null)
   const [connectorPhase, setConnectorPhase] = useState<ConnectorPhase>('steady')
   const switchTimers = useRef<number[]>([])
+
+  // Real pixel geometry for the connector/mat, measured off the live grid
+  // (offsetLeft/offsetWidth are layout values, immune to the poster's hover
+  // scale transform). Percent math kept drifting off-center at the row's
+  // edges and distorted the neck's curves; measuring the actual card ends
+  // that class of bug for every column count at once.
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [expandedMetrics, setExpandedMetrics] = useState<{
+    rowW: number
+    centerX: number
+    posterW: number
+  } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!expanded) {
+      setExpandedMetrics(null)
+      return
+    }
+    const index = expanded.index
+    function measure() {
+      const grid = gridRef.current
+      const card = grid?.children[index] as HTMLElement | undefined
+      if (!grid || !card) return
+      setExpandedMetrics({
+        rowW: grid.clientWidth,
+        centerX: card.offsetLeft + card.offsetWidth / 2,
+        posterW: card.offsetWidth,
+      })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [expanded, columns])
 
   function clearSwitchTimers() {
     for (const t of switchTimers.current) window.clearTimeout(t)
@@ -985,8 +982,8 @@ function UnseenRecommendationsRow() {
     // (snap — no lean toward the new target beforehand), then a NEW one
     // grows in fresh at the new poster's position (form) — no horizontal
     // interpolation ties the two together at any point. `switchTarget` is
-    // set immediately so the newly-clicked poster's ring/highlight appears
-    // right away, ahead of the panel content swap.
+    // set immediately so the newly-clicked poster's halo appears right away,
+    // ahead of the panel content swap.
     setSwitchTarget({ filmId, index })
     setConnectorPhase('snap')
     switchTimers.current.push(
@@ -1083,14 +1080,15 @@ function UnseenRecommendationsRow() {
 
         {!loading && !error && visible.length > 0 && (
           <div
-            // `relative z-10`: the brace connector below deliberately overshoots
-            // a little past full height on landing (the "liquid wobble" —
-            // BraceConnector's `tooth` briefly exceeds 1), which pokes its tip
-            // above its own box for an instant. Without this, that instant
-            // painted over the bottom of the poster row (later DOM = later
-            // paint, same as any unstacked siblings) — a visible flash of the
-            // dark connector on top of the artwork. Stacking the row above it
-            // means any overshoot is simply hidden behind the posters instead.
+            // `relative z-10`: the connector below deliberately overshoots a
+            // little past full height on landing (the "liquid wobble" —
+            // LiquidConnector's `grow` briefly exceeds 1), which pokes its top
+            // above its own box for an instant. Stacking the row above it
+            // hides that overshoot behind the posters/halo instead of letting
+            // it flash on top of the artwork. Being positioned also makes the
+            // grid the offsetParent the expandedMetrics measurement is
+            // relative to.
+            ref={gridRef}
             className="relative z-10 grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
             style={{ perspective: '800px' }}
           >
@@ -1113,16 +1111,39 @@ function UnseenRecommendationsRow() {
         )}
 
         <AnimatePresence>
-          {expanded && (
+          {expanded && expandedMetrics && (
             <div key="expansion">
-              <BraceConnector peakPercent={((expanded.index + 0.5) / columns) * 100} phase={connectorPhase} />
-              <RecommendationExpansionPanel
-                filmId={expanded.filmId}
-                originPercent={((expanded.index + 0.5) / columns) * 100}
-                onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
-                onClose={() => setExpanded(null)}
-                onOpenOverlay={setOverlayFilmId}
+              <LiquidConnector
+                rowW={expandedMetrics.rowW}
+                centerX={expandedMetrics.centerX}
+                posterW={expandedMetrics.posterW}
+                phase={connectorPhase}
               />
+              {/* The mat: a solid ink frame the panel sits nestled inside —
+                  the bottom "bulb" of the liquid shape. It carries the
+                  drop-open spring the panel itself used to run, so the
+                  backdrop and its contents move as one piece. */}
+              <motion.div
+                initial={{ opacity: 0, y: -16, scaleY: 0.72, scaleX: 0.98 }}
+                animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+                exit={{ opacity: 0, y: -12, scaleY: 0.9, transition: { duration: 0.16, ease: 'easeIn' } }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 340,
+                  damping: 28,
+                  mass: 0.9,
+                  opacity: { duration: 0.18, ease: 'easeOut' },
+                }}
+                style={{ transformOrigin: `${expandedMetrics.centerX}px 0%` }}
+                className="rounded-2xl bg-ink p-2 sm:p-2.5"
+              >
+                <RecommendationExpansionPanel
+                  filmId={expanded.filmId}
+                  onNavigate={(id) => setExpanded((prev) => (prev ? { filmId: id, index: prev.index } : prev))}
+                  onClose={() => setExpanded(null)}
+                  onOpenOverlay={setOverlayFilmId}
+                />
+              </motion.div>
             </div>
           )}
         </AnimatePresence>

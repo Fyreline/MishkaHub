@@ -975,7 +975,10 @@ export function Catalogue() {
   const showConnectCard = isEmpty && !filtersActive
 
   return (
-    <section className="mt-20 border-t border-line pt-12">
+    // No top margin/divider of its own — App.tsx's wrapper (`mt-10 border-t
+    // pt-10`) already draws the divider above this section; carrying a second
+    // border-t here doubled the line between recommendations and Cat-alogue.
+    <section>
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="font-display text-2xl font-medium tracking-[-0.005em] text-ink">Cat-alogue</h2>
         <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-cloud">
