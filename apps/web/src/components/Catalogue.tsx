@@ -419,9 +419,15 @@ export function DetailDrawer({
         </div>
 
         {loading && (
-          <div className="space-y-4 p-5">
-            <FilmHeaderSkeleton />
-            <UserRatingColumnsSkeleton />
+          <div>
+            {/* Reserves the same aspect-video space the real backdrop image
+                will occupy once `detail` arrives, so its arrival doesn't
+                shove the header/ratings down a beat later. */}
+            <div className="aspect-video w-full animate-pulse bg-paper-deep" />
+            <div className="space-y-4 p-5">
+              <FilmHeaderSkeleton />
+              <UserRatingColumnsSkeleton />
+            </div>
           </div>
         )}
         {error && !loading && (

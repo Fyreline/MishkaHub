@@ -109,11 +109,30 @@ async function doRefresh(): Promise<boolean> {
   }
 }
 
+/** Single-flight guard around doRefresh() — refresh tokens are rotated on
+ * every use (the backend revokes the presented token and issues a new one),
+ * so two concurrent refresh calls both racing against the SAME stored token
+ * is a real bug, not just wasted work: the loser's request lands after the
+ * winner already rotated it, looks like a replayed/stolen token, and trips
+ * the backend's reuse-detection tripwire — which revokes every refresh
+ * token that user holds, force-logging them out. `bootstrap()` (on app
+ * load) and `getValidAccessToken()` (from the first API call, which can
+ * fire in the same tick) both go through this one shared promise so only
+ * one actual refresh request is ever in flight at a time. */
+function refreshOnce(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
 /** Called once on app start: if a refresh token is stored, try to silently
  * establish a session so a page reload doesn't force a re-login. */
 export async function bootstrap(): Promise<void> {
   if (getStoredRefreshToken()) {
-    await doRefresh()
+    await refreshOnce()
   }
 }
 
@@ -124,12 +143,7 @@ export async function getValidAccessToken(): Promise<string | null> {
   if (accessToken && Date.now() < accessTokenExpiresAt) {
     return accessToken
   }
-  if (!refreshInFlight) {
-    refreshInFlight = doRefresh().finally(() => {
-      refreshInFlight = null
-    })
-  }
-  const ok = await refreshInFlight
+  const ok = await refreshOnce()
   return ok ? accessToken : null
 }
 

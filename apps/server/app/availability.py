@@ -13,6 +13,7 @@ a single self-contained unit of work (delete-then-reinsert for one
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .clients.tmdb import TMDBClient
+from .clients.tmdb import TMDBClient, TMDBError
 from .models import Availability
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,55 @@ async def refresh_film_availability(
     for row in new_rows:
         session.add(row)
     session.commit()
+
+
+async def refresh_many_film_availability(
+    session: Session, tmdb_client: TMDBClient, film_ids: list[int], region: str
+) -> int:
+    """Same effect as calling `refresh_film_availability` once per film, but
+    the network fetches run concurrently — measured live 2026-07-05: the
+    recommender's per-request lazy-refresh loop (up to 40 films) was taking
+    ~4-5s calling `refresh_film_availability` sequentially, almost entirely
+    TMDB round-trip latency. `session.commit()` per film is NOT safe to
+    parallelize (one SQLAlchemy Session isn't safe for concurrent writes), so
+    only the `tmdb_client.watch_providers()` fetch is gathered concurrently;
+    every DB write still happens sequentially afterwards on the one session.
+    Returns the number of films successfully refreshed.
+    """
+    if not film_ids:
+        return 0
+
+    async def _fetch(fid: int) -> tuple[int, dict | None]:
+        try:
+            return fid, await tmdb_client.watch_providers(fid)
+        except TMDBError:
+            logger.warning("availability refresh failed for %s", fid, exc_info=True)
+            return fid, None
+
+    results = await asyncio.gather(*(_fetch(fid) for fid in film_ids))
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    refreshed = 0
+    for film_id, data in results:
+        if data is None:
+            continue
+        new_rows = [
+            Availability(film_id=film_id, provider_id=entry["provider_id"], kind=kind,
+                         region=region, fetched_at=now)
+            for kind in _KINDS
+            for entry in (data.get(kind, None) or [])
+            if entry.get("provider_id") is not None
+        ]
+        session.execute(
+            delete(Availability).where(
+                Availability.film_id == film_id, Availability.region == region
+            )
+        )
+        for row in new_rows:
+            session.add(row)
+        refreshed += 1
+    session.commit()
+    return refreshed
 
 
 def needs_refresh(session: Session, film_id: int, region: str, *, ttl_days: int = 7) -> bool:

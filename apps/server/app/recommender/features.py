@@ -32,6 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import json
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -318,20 +319,58 @@ def _parse_metadata(film: "Film") -> dict:
         return {}
 
 
-def build_corpus_matrix(films: list["Film"]) -> tuple[sp.csr_matrix, list[int]]:
-    """Fit a FeatureSpace over all given films (non-null metadata_json expected;
-    films with unparseable/missing metadata still get a row of neutral/empty
-    values via extract_features's graceful fallbacks) and return the stacked
-    matrix + aligned film-id list.
+# Shared cache for the expensive step both build_corpus_matrix() (below) and
+# taste.py's build_corpus_space() need: extracting features for every film +
+# fitting the FeatureSpace + transforming into a matrix. Originally
+# documented as "fine at tens to low hundreds of films, well under a
+# second" — measured live 2026-07-05 at the real ~5,000-film corpus size:
+# GET /api/films/{id}/similar took ~1.5s and GET /api/recommendations took
+# ~6s (which additionally fits two per-user taste models on top of this,
+# see pipeline.py's own cache), both refitting from scratch on every single
+# request. Cache key is the exact film-id set in play — /recommendations
+# and /similar use slightly different eligibility-filtered subsets, so they
+# land in separate entries; a short TTL keeps this acceptably fresh (a new
+# rating/import shows up within the window) without paying the full refit
+# on every request. Capped at a handful of entries since realistically only
+# 2-3 distinct film-id sets are ever in flight at once (the full recs
+# corpus, and /similar's eligible-for-either-user corpus).
+_FIT_CACHE: dict[tuple[int, ...], tuple[float, "FeatureSpace", sp.csr_matrix, list[int]]] = {}
+_FIT_CACHE_TTL_SECONDS = 300
+_FIT_CACHE_MAX_ENTRIES = 6
 
-    Recomputed in-process on every call — no persisted artefact/versioning
-    (§6 is out of scope for v0). Fine at this corpus size (tens to low
-    hundreds of films): fitting + transforming is well under a second.
-    """
+
+def _fit_corpus_cached(films: list["Film"]) -> tuple["FeatureSpace", sp.csr_matrix, list[int]]:
+    key = tuple(sorted(f.id for f in films))
+    now = time.monotonic()
+    cached = _FIT_CACHE.get(key)
+    if cached is not None and now - cached[0] < _FIT_CACHE_TTL_SECONDS:
+        return cached[1], cached[2], cached[3]
+
     film_ids = [f.id for f in films]
     raw_features = [extract_features(f.id, _parse_metadata(f)) for f in films]
     space = FeatureSpace().fit(raw_features)
     matrix = space.transform(raw_features)
+
+    if len(_FIT_CACHE) >= _FIT_CACHE_MAX_ENTRIES:
+        oldest_key = min(_FIT_CACHE, key=lambda k: _FIT_CACHE[k][0])
+        _FIT_CACHE.pop(oldest_key, None)
+    _FIT_CACHE[key] = (now, space, matrix, film_ids)
+    return space, matrix, film_ids
+
+
+def invalidate_corpus_fit_cache() -> None:
+    """Called after a retrain (new films hydrated) so a fresh fit is picked
+    up immediately rather than waiting out the TTL."""
+    _FIT_CACHE.clear()
+
+
+def build_corpus_matrix(films: list["Film"]) -> tuple[sp.csr_matrix, list[int]]:
+    """Fit (or reuse a cached fit of) a FeatureSpace over all given films
+    (non-null metadata_json expected; films with unparseable/missing
+    metadata still get a row of neutral/empty values via extract_features's
+    graceful fallbacks) and return the stacked matrix + aligned film-id list.
+    """
+    _, matrix, film_ids = _fit_corpus_cached(films)
     return matrix, film_ids
 
 

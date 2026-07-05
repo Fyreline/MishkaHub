@@ -29,7 +29,6 @@ Persisted (§6, scoped) via `save_taste_artifact()` as a joblib file under
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -41,7 +40,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Film, Like, Rating
-from .features import FeatureSpace, RawFeatures, build_corpus_matrix, extract_features
+from .features import FeatureSpace, _fit_corpus_cached
 
 logger = logging.getLogger(__name__)
 
@@ -71,23 +70,20 @@ class CorpusSpace:
 
 
 def build_corpus_space(films: list[Film]) -> CorpusSpace:
-    """Fit a FeatureSpace over ALL given films and return the reusable space."""
-    matrix, film_ids = build_corpus_matrix(films)
+    """Fit (or reuse a cached fit of) a FeatureSpace over ALL given films and
+    return the reusable space.
+
+    Previously re-extracted features and re-fit a SECOND, separate
+    FeatureSpace just to get a `space` object to hand back (on top of the
+    fit+transform `features.py`'s `build_corpus_matrix` already does) — real,
+    measured double work at the ~5,000-film corpus size (2026-07-05). Now
+    shares `features.py`'s `_fit_corpus_cached`, which does the fit once
+    (cached across calls with the same film-id set) and returns the
+    FeatureSpace alongside the matrix.
+    """
+    space, matrix, film_ids = _fit_corpus_cached(films)
     index_of = {fid: i for i, fid in enumerate(film_ids)}
-    # Rebuild the fitted FeatureSpace so we can transform arbitrary later films
-    # (e.g. a newly-hydrated candidate) into the same vocabulary if needed.
-    raw = [extract_features(f.id, _parse_meta(f)) for f in films]
-    space = FeatureSpace().fit(raw)
     return CorpusSpace(space=space, matrix=matrix, film_ids=film_ids, index_of=index_of)
-
-
-def _parse_meta(film: Film) -> dict:
-    if not film.metadata_json:
-        return {}
-    try:
-        return json.loads(film.metadata_json)
-    except (json.JSONDecodeError, TypeError):
-        return {}
 
 
 @dataclass

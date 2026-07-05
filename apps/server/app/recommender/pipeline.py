@@ -20,6 +20,7 @@ under include_unavailable.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -28,10 +29,11 @@ from sqlalchemy.orm import Session
 import json
 from typing import Callable
 
-from ..availability import dedupe_offers_by_provider, needs_refresh, refresh_film_availability
-from ..clients.tmdb import TMDBClient, TMDBError
+from ..availability import dedupe_offers_by_provider, needs_refresh, refresh_many_film_availability
+from ..clients.tmdb import TMDBClient
 from ..models import Availability, Film, MediaFile, Rating, Subscription, Watch
 from .candidates import CandidateGenReport, generate_candidates
+from .features import invalidate_corpus_fit_cache
 from .scoring import (
     ScoredCandidate,
     eligible_film_ids,
@@ -72,6 +74,37 @@ def build_models(session: Session) -> tuple[CorpusSpace, dict[int, UserTasteMode
         user_ids = [1, 2]
     models = {uid: fit_user_taste(session, uid, corpus) for uid in user_ids}
     return corpus, models, global_mean
+
+
+# `recommend()` (unlike `retrain()`) is called on every homepage load / filter
+# change, so its `build_models()` call is cached here — measured live
+# 2026-07-05 at ~6s per call at the real ~5,000-film corpus size (corpus
+# fitting + two RidgeCV fits, all from scratch, every request). A short TTL
+# keeps this acceptably fresh (a new rating shows up within the window)
+# without paying that cost on every request; eligibility/seen-filtering
+# still reads the DB live per request regardless (see eligible_film_ids/
+# _seen_by below), so a cached model never serves a film someone just
+# marked watched — only the taste SCORING can lag by up to the TTL.
+_MODELS_CACHE_TTL_SECONDS = 300
+_models_cache: dict[str, object] = {}
+
+
+def build_models_cached(session: Session) -> tuple[CorpusSpace, dict[int, UserTasteModel], float]:
+    now = time.monotonic()
+    cached = _models_cache.get("data")
+    if cached is not None and now - _models_cache.get("built_at", 0.0) < _MODELS_CACHE_TTL_SECONDS:
+        return cached  # type: ignore[return-value]
+    result = build_models(session)
+    _models_cache["data"] = result
+    _models_cache["built_at"] = now
+    return result
+
+
+def invalidate_models_cache() -> None:
+    """Called after a retrain so freshly-generated candidates/models are
+    picked up immediately rather than waiting out the TTL."""
+    _models_cache.clear()
+    invalidate_corpus_fit_cache()
 
 
 def _global_vote_mean(films: list[Film]) -> float:
@@ -129,6 +162,7 @@ async def retrain(
         global_mean=global_mean,
         metrics=metrics,
     )
+    invalidate_models_cache()  # so the next recommend() call picks this up immediately
 
     return RetrainReport(
         candidate_report=cand_report,
@@ -185,18 +219,17 @@ async def _availability_boost_map(
     boost = best KIND_BOOST across offers on a *subscribed* provider.
     available_film_ids = films with any subscribed flatrate/free/ads offer.
     Lazily refreshes availability for up to AVAIL_REFRESH_CAP films missing a
-    fresh cache row.
+    fresh cache row — fetched concurrently (see
+    `availability.refresh_many_film_availability`), not one-by-one, since
+    that loop used to be almost entirely sequential TMDB round-trip latency
+    (measured ~4-5s for a full 40-film cap before this fix).
     """
-    refreshed = 0
-    for fid in film_ids:
-        if allow_refresh and refreshed < AVAIL_REFRESH_CAP and needs_refresh(
-            session, fid, REGION
-        ):
-            try:
-                await refresh_film_availability(session, tmdb, fid, REGION)
-                refreshed += 1
-            except TMDBError:
-                logger.warning("availability refresh failed for %s", fid, exc_info=True)
+    if allow_refresh:
+        to_refresh = [fid for fid in film_ids if needs_refresh(session, fid, REGION)][
+            :AVAIL_REFRESH_CAP
+        ]
+        if to_refresh:
+            await refresh_many_film_availability(session, tmdb, to_refresh, REGION)
 
     rows = session.execute(
         select(Availability.film_id, Availability.provider_id, Availability.kind).where(
@@ -269,7 +302,7 @@ async def recommend(
     if profile_user_ids is None:
         raise ValueError(f"unknown profile {profile!r}")
 
-    corpus, models, global_mean = build_models(session)
+    corpus, models, global_mean = build_models_cached(session)
 
     # Candidate pool = films eligible for EVERY user in the profile.
     ineligible: set[int] = set()
