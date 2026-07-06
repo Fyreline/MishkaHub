@@ -453,10 +453,11 @@ function FilterPill({
 // centering a constant fight.
 // ---------------------------------------------------------------------------
 const NECK_H = 48 // px height of the neck region between poster row and mat
-const HALO_PAD = 8 // how far the halo extends past the poster's sides; must match MovieCard's -inset-x-2
-const HALO_CORNER = 12 // the halo's corner radius; must match MovieCard's rounded-xl
+const HALO_PAD = 12 // how far the halo extends past the poster's sides; must match MovieCard's -inset-x-3
+const HALO_CORNER = 16 // the halo's bottom corner radius; must match MovieCard's rounded-b-2xl
+const HALO_OVERHANG = 8 // how far the halo sticks out below the poster; must match MovieCard's -bottom-2
 const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
-const NECK_TOP_OVERLAP = 6 // how far the neck tucks up under the halo's solid base (behind poster + halo)
+const NECK_SEAM = 6 // hidden vertical sliver drawn up behind the halo's solid base so the join can't show a hairline
 const NECK_TOUCH = 0.5 // grow value at which the two menisci meet mid-air
 
 /** `grow` is how formed the connection is, 0..~1.2. Below NECK_TOUCH the
@@ -468,39 +469,49 @@ const NECK_TOUCH = 0.5 // grow value at which the two menisci meet mid-air
  * reads as a wobble).
  *
  * Every end of every curve is tangent to the straight edge it leaves or
- * lands on: horizontal off the halo's underside, horizontal onto the mat's
- * top edge, vertical through the waist — so the shape always fits flush
- * against the flat lines instead of meeting them at an angle. The neck's
- * top opening starts HALO_CORNER inside the halo's sides, exactly where the
- * halo's rounded bottom corner finishes turning horizontal, so the halo's
- * corner arc flows straight into the neck's curve with no notch. */
+ * lands on: horizontal off the halo's underside (which now hangs
+ * HALO_OVERHANG below the poster — the visible join line the neck grows
+ * from), horizontal onto the mat's top edge, vertical through the waist —
+ * so poster halo → neck → mat reads as one seamless outline curving the
+ * whole perimeter, never meeting a flat edge at an angle. The neck's top
+ * opening starts HALO_CORNER inside the halo's sides, exactly where the
+ * halo's rounded bottom corner finishes turning horizontal, so the corner
+ * arc flows straight into the neck's curve with no notch; generous corner
+ * radius + bottom flare are what make the joins read as curves rather than
+ * a shape butted against two boxes. */
 function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: number): string {
   const t = Math.max(0, Math.min(1.2, growRaw))
   const topHW = Math.max(12, posterW / 2 + HALO_PAD - HALO_CORNER)
-  const topY = -NECK_TOP_OVERLAP
+  const joinY = HALO_OVERHANG // where the halo's bottom edge actually sits inside this svg
   const botY = NECK_H + 2 // draw 2px into the mat so the seam can't anti-alias into a hairline
-  const midY = NECK_H * 0.5
+  const midY = (joinY + NECK_H) * 0.5
   // Bottom landing: symmetric about the poster's center, shrunk to whatever
   // room the nearest mat corner leaves — so end posters get the same
   // hourglass as middle ones, just a touch narrower, instead of one side
   // bending in toward the middle of the row.
-  const flare = 20 + topHW * 0.25
+  const flare = 26 + topHW * 0.35
   const botHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS, rowW - MAT_RADIUS - centerX), 24)
   const leftT = centerX - topHW
   const rightT = centerX + topHW
   const leftB = centerX - botHW
   const rightB = centerX + botHW
+  // The tangent construction only holds if the curves start exactly at the
+  // halo's visible bottom edge (joinY); the seam sliver above it is a plain
+  // vertical run hidden behind the halo's solid base.
+  const seamY = joinY - NECK_SEAM
 
   if (t < NECK_TOUCH) {
     // Separated: two rounded menisci, bases hidden under the halo / inside
     // the mat, tips reaching toward the midline.
     const u = t / NECK_TOUCH
-    const upperTip = topY + u * (midY - topY)
+    const upperTip = joinY + u * (midY - joinY)
     const lowerTip = botY - u * (botY - midY)
     return [
-      `M${leftT},${topY}`,
-      `C${leftT + (centerX - leftT) * 0.45},${topY} ${leftT + (centerX - leftT) * 0.85},${upperTip} ${centerX},${upperTip}`,
-      `C${rightT - (rightT - centerX) * 0.85},${upperTip} ${rightT - (rightT - centerX) * 0.45},${topY} ${rightT},${topY}`,
+      `M${leftT},${seamY}`,
+      `L${leftT},${joinY}`,
+      `C${leftT + (centerX - leftT) * 0.45},${joinY} ${leftT + (centerX - leftT) * 0.85},${upperTip} ${centerX},${upperTip}`,
+      `C${rightT - (rightT - centerX) * 0.85},${upperTip} ${rightT - (rightT - centerX) * 0.45},${joinY} ${rightT},${joinY}`,
+      `L${rightT},${seamY}`,
       'Z',
       `M${leftB},${botY}`,
       `C${leftB + (centerX - leftB) * 0.45},${botY} ${leftB + (centerX - leftB) * 0.85},${lowerTip} ${centerX},${lowerTip}`,
@@ -511,15 +522,17 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
 
   // Merged: the full hourglass, waist thickening with s.
   const s = Math.min((t - NECK_TOUCH) / (1 - NECK_TOUCH), 1.12)
-  const waistBase = Math.min(Math.max(topHW * 0.52, 14), 40)
+  const waistBase = Math.min(Math.max(topHW * 0.4, 12), 32)
   const w = Math.max(0.5, Math.min(waistBase * s, botHW - 4, topHW - 3))
   return [
-    `M${leftT},${topY}`,
-    `C${leftT + (centerX - w - leftT) * 0.6},${topY} ${centerX - w},${(topY + midY) * 0.5} ${centerX - w},${midY}`,
+    `M${leftT},${seamY}`,
+    `L${leftT},${joinY}`,
+    `C${leftT + (centerX - w - leftT) * 0.6},${joinY} ${centerX - w},${(joinY + midY) * 0.5} ${centerX - w},${midY}`,
     `C${centerX - w},${midY + (botY - midY) * 0.5} ${leftB + (centerX - w - leftB) * 0.55},${botY} ${leftB},${botY}`,
     `L${rightB},${botY}`,
     `C${rightB - (rightB - (centerX + w)) * 0.55},${botY} ${centerX + w},${midY + (botY - midY) * 0.5} ${centerX + w},${midY}`,
-    `C${centerX + w},${(topY + midY) * 0.5} ${rightT - (rightT - (centerX + w)) * 0.6},${topY} ${rightT},${topY}`,
+    `C${centerX + w},${(joinY + midY) * 0.5} ${rightT - (rightT - (centerX + w)) * 0.6},${joinY} ${rightT},${joinY}`,
+    `L${rightT},${seamY}`,
     'Z',
   ].join(' ')
 }
@@ -567,7 +580,13 @@ function LiquidConnector({
   useEffect(() => {
     if (phase === 'steady') {
       cx.jump(centerX)
-      const anim = animate(grow, 1, { type: 'spring', stiffness: 320, damping: 22 })
+      // The small delay covers the first open: the mat below fades/unfolds
+      // in over ~180ms, and starting the menisci immediately let the lower
+      // one appear over bare page background for a beat (a white flash at
+      // the panel's top edge, most visible on mobile). Waiting ~120ms keeps
+      // the liquid growing only once there's a surface for it to pool on;
+      // on re-entries to 'steady' grow is already 1, so the delay is inert.
+      const anim = animate(grow, 1, { type: 'spring', stiffness: 320, damping: 22, delay: 0.12 })
       return () => anim.stop()
     }
     if (phase === 'snap') {
@@ -1357,39 +1376,68 @@ function AuthenticatedApp() {
   // drifts out of sync with whatever height the header currently is.
   const headerRef = useRef<HTMLElement>(null)
   const [collapseTopBar, setCollapseTopBar] = useState(false)
-  // Net scroll movement, clamped to +-FLIP_THRESHOLD, NOT reset on every
-  // direction wobble — iOS momentum scroll fires many small events per
-  // gesture, some of which nudge slightly backwards (sub-pixel rounding,
-  // rubber-banding) even mid-fling. An earlier version reset this to zero on
-  // any sign change, which sounds like reasonable hysteresis but actually
-  // meant a single -1px blip could erase an entire fling's progress —
-  // verified against a synthetic noisy-scroll sequence that produced ZERO
-  // collapses despite +69px of real net downward movement. Plain
-  // accumulation (small backwards nudges just erode progress instead of
-  // wiping it) fixes both the flip-flop jitter this exists to prevent AND
-  // that regression, and a rAF-scheduled read of window.scrollY (rather than
-  // acting on every raw 'scroll' event) caps evaluation at once per frame.
+  // Two separate failure modes feed this state, and each needs its own
+  // defense:
+  //
+  // 1. Event noise — iOS momentum scroll fires many small events per
+  //    gesture, some nudging slightly backwards (sub-pixel rounding,
+  //    rubber-banding) even mid-fling. Defense: flip on NET movement
+  //    accumulated across frames (clamped to +-FLIP_THRESHOLD, one
+  //    rAF-scheduled read per frame), so a -1px blip erodes progress
+  //    instead of flipping state. (Don't "improve" this to
+  //    reset-on-direction-change: that let a single blip erase a whole
+  //    fling's progress and the header never collapsed at all.)
+  //
+  // 2. Self-induced feedback — flipping the state collapses/expands row 1,
+  //    which changes the sticky header's height by ~50px, which shifts the
+  //    page layout, which fires scroll events whose deltas (bigger than the
+  //    threshold!) read as the user scrolling the OTHER way → flip back →
+  //    shift again → a permanent bounce with zero input. This is what a
+  //    tiny drag-down during the collapse animation triggered. Defense: a
+  //    lockout window after every flip, a bit longer than the 200ms
+  //    grid-rows transition, during which deltas are swallowed and the
+  //    baseline re-anchors every frame — the header's own layout shifts can
+  //    never count as user scrolling.
   const lastY = useRef(0)
   const accum = useRef(0)
   const rafId = useRef(0)
+  const collapsedRef = useRef(false)
+  const lockUntil = useRef(0)
   const FLIP_THRESHOLD = 24
+  const FLIP_LOCKOUT_MS = 300
 
   useEffect(() => {
+    function flip(next: boolean, now: number) {
+      if (collapsedRef.current === next) return
+      collapsedRef.current = next
+      lockUntil.current = now + FLIP_LOCKOUT_MS
+      accum.current = 0
+      setCollapseTopBar(next)
+    }
     function tick() {
       rafId.current = 0
       const y = window.scrollY
-      const dy = y - lastY.current
-      lastY.current = y
+      const now = performance.now()
       if (y <= 12) {
+        // Always allowed, even mid-lockout: at the very top the expanded
+        // header only grows downward, so re-expanding can't move scrollY
+        // and can't re-enter the feedback loop.
+        lastY.current = y
         accum.current = 0
-        setCollapseTopBar(false)
+        flip(false, now)
         return
       }
+      if (now < lockUntil.current) {
+        lastY.current = y // swallow the delta, keep the baseline fresh
+        return
+      }
+      const dy = y - lastY.current
+      lastY.current = y
       accum.current = Math.max(-FLIP_THRESHOLD, Math.min(FLIP_THRESHOLD, accum.current + dy))
       if (accum.current >= FLIP_THRESHOLD) {
-        setCollapseTopBar(true)
+        flip(true, now)
       } else if (accum.current <= -FLIP_THRESHOLD) {
-        setCollapseTopBar(false)
+        flip(false, now)
       }
     }
     function onScroll() {
