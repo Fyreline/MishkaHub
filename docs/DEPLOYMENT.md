@@ -144,6 +144,18 @@ Restart the service after changing it. Verify from the Pages site: the status pi
 
 **Server env checklist (`apps/server/.env`):** `MISHKA_TMDB_READ_TOKEN`, `MISHKA_REGION=GB`, `MISHKA_LANGUAGE=en-GB`, `MISHKA_JWT_SECRET` (Phase 4 — required for login to work), `MISHKA_CORS_ORIGINS=[…]` (only if overriding the built-in default above), `MISHKA_JELLYFIN_URL`/`_API_KEY` (Phase 7), `MISHKA_ENVIRONMENT=production`.
 
+## 3b. Control Center server toggle (macOS Tahoe)
+
+`scripts/mishka-server.sh [on|off|toggle|status] [-n]` starts/stops the API LaunchAgent (`-n` posts a macOS notification with the result). It deliberately leaves the cloudflared tunnel alone: that's a root daemon (password prompt on every toggle) with negligible idle power — the ML server is the process worth stopping. While off, the Pages site loads but shows "Server offline".
+
+A true third-party Control Center widget requires a signed WidgetKit app (full Xcode — not installed). Same outcome via a Shortcut control, set up once by hand:
+
+1. **Shortcuts app** → new shortcut → add **Run Shell Script** action → command: `~/Documents/Dev/MishkaHub/scripts/mishka-server.sh toggle -n`, shell `zsh`.
+2. Name it **Mishka Hub**; click the icon in the title bar to pick a glyph (there's a cat 🐱 / pawprint) and color.
+3. **Control Center** (menu bar) → **Edit Controls** (or System Settings → Control Center) → add a **Shortcut** control → point it at the Mishka Hub shortcut.
+
+Tapping it toggles the server and pops a "Server ON 🐱 / OFF 💤" notification. First run may prompt once to allow the shortcut to run shell scripts (Shortcuts settings → Advanced → Allow Running Scripts).
+
 ## 4. SQLite backup strategy
 
 The DB is small ([DATA_MODEL.md](DATA_MODEL.md) §5); model artefacts are reproducible (skip them); Playwright/session secrets are re-creatable (skip). **Back up: `mishka-hub.db` + `apps/server/.env` + `~/.cloudflared/`.**
