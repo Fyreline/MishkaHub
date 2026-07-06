@@ -20,6 +20,11 @@
   --color-olive: #788c5d;
   --color-sky: #6a9bcc;
   --color-fig: #c46686;
+  /* the liquid connector surface (poster halo + neck + panel mat) — a warm
+     sand between oat and kraft, deliberately background-adjacent rather
+     than a hard ink outline or a loud clay frame; one knob for the whole
+     composition */
+  --color-liquid: #dcc9ab;
 
   /* type */
   --font-display: "Schibsted Grotesk", "Space Grotesk", Arial, sans-serif;
@@ -70,6 +75,9 @@
   --color-olive: #9bb17c;
   --color-sky: #8bb4de;
   --color-fig: #d992ac;
+  /* liquid surface: a lifted warm charcoal — clearly above the page/panel
+     grounds without the full cream-on-black contrast of ink */
+  --color-liquid: #3f3a31;
 }
 
 html,

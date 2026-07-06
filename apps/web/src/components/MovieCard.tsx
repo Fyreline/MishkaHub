@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { motion, useMotionValue, useSpring, useTransform, useReducedMotion } from 'motion/react'
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, useReducedMotion } from 'motion/react'
 import type { FilmSummary, Movie } from '../api'
 
 // Drag engagement thresholds (DESIGN.md §3c).
@@ -33,8 +33,8 @@ export function MovieCard({
    * shape), so the poster reads as sitting comfortably in the same dark
    * backdrop that pinches down through App.tsx's LiquidConnector neck into
    * the detail panel's mat. The halo's side padding, bottom overhang and
-   * bottom corner radius must stay in step with HALO_PAD (12px ==
-   * -inset-x-3), HALO_OVERHANG (8px == -bottom-2) and HALO_CORNER (16px ==
+   * bottom corner radius must stay in step with HALO_PAD (8px ==
+   * -inset-x-2), HALO_OVERHANG (8px == -bottom-2) and HALO_CORNER (16px ==
    * rounded-b-2xl) there; the neck tucks up behind the halo's solid lower
    * reach so the two fills merge with no seam. */
   expanded?: boolean
@@ -123,12 +123,12 @@ export function MovieCard({
         {expanded && (
           <span
             aria-hidden
-            className="absolute -inset-x-3 -top-2 -bottom-2 rounded-t-xl rounded-b-2xl bg-gradient-to-t from-ink from-25% to-transparent to-70%"
+            className="absolute -inset-x-2 -top-2 -bottom-2 rounded-t-xl rounded-b-2xl bg-gradient-to-t from-liquid from-25% to-transparent to-70%"
           />
         )}
         <div
           className={`relative h-full w-full overflow-hidden rounded-sm border bg-paper-mid ${
-            expanded ? 'border-ink' : 'border-line'
+            expanded ? 'border-liquid' : 'border-line'
           }`}
         >
           <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />
@@ -165,18 +165,26 @@ export function MovieCard({
           silhouette-wise the corner flows straight into the neck's curve.
           Rendered before the (positioned) content wrapper so document order
           keeps it underneath. */}
-      {expanded && (
-        <motion.span
-          aria-hidden
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.15 }}
-          className="absolute -inset-x-3 -top-2 -bottom-2 rounded-t-xl rounded-b-2xl bg-gradient-to-t from-ink from-25% to-transparent to-70%"
-        />
-      )}
+      {/* AnimatePresence so the halo FADES out (matching the neck's 0.12s
+          exit fade below the grid) instead of unmounting instantly when
+          `expanded` flips off — an instant vanish left the still-fading
+          neck visible alone for a beat, its flat seam-top reading as a
+          stray rectangle where the halo used to be. */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.span
+            aria-hidden
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
+            transition={{ duration: 0.15 }}
+            className="absolute -inset-x-2 -top-2 -bottom-2 rounded-t-xl rounded-b-2xl bg-gradient-to-t from-liquid from-25% to-transparent to-70%"
+          />
+        )}
+      </AnimatePresence>
       <div
         className={`relative h-full w-full overflow-hidden rounded-sm border bg-paper-mid ${
-          expanded ? 'border-ink' : 'border-line'
+          expanded ? 'border-liquid' : 'border-line'
         }`}
       >
         <PosterContent movie={movie} rating={rating} ratingIsMine={ratingIsMine} badges={badges} />

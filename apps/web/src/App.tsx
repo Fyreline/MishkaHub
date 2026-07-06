@@ -453,7 +453,7 @@ function FilterPill({
 // centering a constant fight.
 // ---------------------------------------------------------------------------
 const NECK_H = 48 // px height of the neck region between poster row and mat
-const HALO_PAD = 12 // how far the halo extends past the poster's sides; must match MovieCard's -inset-x-3
+const HALO_PAD = 8 // halo's side reach past the poster; must match MovieCard's -inset-x-2, and must not exceed --poster-gap (8px) or the halo bleeds onto neighboring posters
 const HALO_CORNER = 16 // the halo's bottom corner radius; must match MovieCard's rounded-b-2xl
 const HALO_OVERHANG = 8 // how far the halo sticks out below the poster; must match MovieCard's -bottom-2
 const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
@@ -489,7 +489,7 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
   // room the nearest mat corner leaves — so end posters get the same
   // hourglass as middle ones, just a touch narrower, instead of one side
   // bending in toward the middle of the row.
-  const flare = 26 + topHW * 0.35
+  const flare = 30 + topHW * 0.4
   const botHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS, rowW - MAT_RADIUS - centerX), 24)
   const leftT = centerX - topHW
   const rightT = centerX + topHW
@@ -528,9 +528,12 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
     `M${leftT},${seamY}`,
     `L${leftT},${joinY}`,
     `C${leftT + (centerX - w - leftT) * 0.6},${joinY} ${centerX - w},${(joinY + midY) * 0.5} ${centerX - w},${midY}`,
-    `C${centerX - w},${midY + (botY - midY) * 0.5} ${leftB + (centerX - w - leftB) * 0.55},${botY} ${leftB},${botY}`,
+    // Bottom landing runs 0.62 of the way along the mat (vs 0.6 up top) —
+    // the extra horizontal reach makes the flare onto the mat's flat edge
+    // read as generously as the curve leaving the halo does.
+    `C${centerX - w},${midY + (botY - midY) * 0.5} ${leftB + (centerX - w - leftB) * 0.62},${botY} ${leftB},${botY}`,
     `L${rightB},${botY}`,
-    `C${rightB - (rightB - (centerX + w)) * 0.55},${botY} ${centerX + w},${midY + (botY - midY) * 0.5} ${centerX + w},${midY}`,
+    `C${rightB - (rightB - (centerX + w)) * 0.62},${botY} ${centerX + w},${midY + (botY - midY) * 0.5} ${centerX + w},${midY}`,
     `C${centerX + w},${(joinY + midY) * 0.5} ${rightT - (rightT - (centerX + w)) * 0.6},${joinY} ${rightT},${joinY}`,
     `L${rightT},${seamY}`,
     'Z',
@@ -615,7 +618,7 @@ function LiquidConnector({
         viewBox={`0 0 ${rowW} ${NECK_H}`}
         aria-hidden
         style={{ overflow: 'visible' }}
-        className="pointer-events-none block text-ink"
+        className="pointer-events-none block text-liquid"
       >
         <motion.path d={d} fill="currentColor" />
       </svg>
@@ -623,7 +626,7 @@ function LiquidConnector({
         <motion.span
           key="droplet"
           aria-hidden
-          className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-ink"
+          className="pointer-events-none absolute top-0 h-1.5 w-1.5 rounded-full bg-liquid"
           style={{ left: centerX, x: '-50%' }}
           // Falls from the waist — where the liquid actually separates —
           // down into the mat, not from under the poster.
@@ -1194,7 +1197,7 @@ function UnseenRecommendationsRow() {
                   opacity: { duration: 0.18, ease: 'easeOut' },
                 }}
                 style={{ transformOrigin: `${expandedMetrics.centerX}px 0%` }}
-                className="rounded-2xl bg-ink p-2 sm:p-2.5"
+                className="rounded-2xl bg-liquid p-2 sm:p-2.5"
               >
                 <RecommendationExpansionPanel
                   filmId={expanded.filmId}
