@@ -456,7 +456,7 @@ const NECK_H = 48 // px height of the neck region between poster row and mat
 const HALO_PAD = 6 // halo's side reach past the poster; must match MovieCard's -inset-x-1.5, and must stay under --poster-gap (8px) or the halo touches neighboring posters
 const HALO_CORNER = 16 // the halo's bottom corner radius; must match MovieCard's rounded-b-2xl
 const HALO_OVERHANG = 8 // how far the halo sticks out below the poster; must match MovieCard's -bottom-2
-const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
+const MAT_CORNER_R = 16 // the mat's actual rounded-2xl corner radius (verified via computed style)
 const NECK_SEAM = 6 // hidden vertical sliver drawn up behind the halo's solid base so the join can't show a hairline
 const NECK_TOUCH = 0.5 // grow value at which the two menisci meet mid-air
 
@@ -490,14 +490,25 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
   // (the previous approach) meant an edge poster's far side — which has the
   // whole rest of the row to flare into — got squeezed down to match its
   // near side, losing the generous flare middle posters get on both sides.
-  // Independent clamping keeps the far side identical to a middle poster's,
-  // while the near side lands exactly at MAT_RADIUS from the mat's edge —
-  // precisely where the mat's own rounded corner begins — so that side
-  // blends straight into the corner instead of landing short of it with a
-  // flat gap, or overhanging past it.
+  //
+  // The safe x-boundary is height-aware, not a flat margin: our landing sits
+  // only `matLocalY` px past the mat's own top edge (2px — botY draws just
+  // past NECK_H, into the mat, for anti-alias safety), and the mat's corner
+  // has ALREADY opened up substantially by that depth (a flat MAT_RADIUS
+  // margin sized for the corner's very top was landing the near side
+  // narrower than the top opening — the taper inverted instead of flowing
+  // outward into the corner, unlike the halo side, which always flows
+  // outward because topHW is a fixed, poster-width-driven offset). Solving
+  // the actual quarter-circle for the boundary at this exact depth, then
+  // flooring at topHW so the bottom is never narrower than the top, keeps
+  // the constrained side flowing in the same direction as the open side —
+  // just tucked in against the real corner curve instead of a flat wall.
+  const matLocalY = botY - NECK_H
+  const cornerSafeX =
+    matLocalY >= MAT_CORNER_R ? 0 : MAT_CORNER_R - Math.sqrt(Math.max(0, MAT_CORNER_R ** 2 - (MAT_CORNER_R - matLocalY) ** 2))
   const flare = 30 + topHW * 0.4
-  const leftFlareHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS), 24)
-  const rightFlareHW = Math.max(Math.min(topHW + flare, rowW - MAT_RADIUS - centerX), 24)
+  const leftFlareHW = Math.max(Math.min(topHW + flare, centerX - cornerSafeX), topHW)
+  const rightFlareHW = Math.max(Math.min(topHW + flare, rowW - cornerSafeX - centerX), topHW)
   const leftT = centerX - topHW
   const rightT = centerX + topHW
   const leftB = centerX - leftFlareHW
