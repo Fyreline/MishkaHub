@@ -1357,23 +1357,50 @@ function AuthenticatedApp() {
   // drifts out of sync with whatever height the header currently is.
   const headerRef = useRef<HTMLElement>(null)
   const [collapseTopBar, setCollapseTopBar] = useState(false)
-  const lastScrollY = useRef(0)
+  // Net scroll movement, clamped to +-FLIP_THRESHOLD, NOT reset on every
+  // direction wobble — iOS momentum scroll fires many small events per
+  // gesture, some of which nudge slightly backwards (sub-pixel rounding,
+  // rubber-banding) even mid-fling. An earlier version reset this to zero on
+  // any sign change, which sounds like reasonable hysteresis but actually
+  // meant a single -1px blip could erase an entire fling's progress —
+  // verified against a synthetic noisy-scroll sequence that produced ZERO
+  // collapses despite +69px of real net downward movement. Plain
+  // accumulation (small backwards nudges just erode progress instead of
+  // wiping it) fixes both the flip-flop jitter this exists to prevent AND
+  // that regression, and a rAF-scheduled read of window.scrollY (rather than
+  // acting on every raw 'scroll' event) caps evaluation at once per frame.
+  const lastY = useRef(0)
+  const accum = useRef(0)
+  const rafId = useRef(0)
+  const FLIP_THRESHOLD = 24
 
   useEffect(() => {
-    function onScroll() {
+    function tick() {
+      rafId.current = 0
       const y = window.scrollY
-      const delta = y - lastScrollY.current
+      const dy = y - lastY.current
+      lastY.current = y
       if (y <= 12) {
+        accum.current = 0
         setCollapseTopBar(false)
-      } else if (delta > 4) {
+        return
+      }
+      accum.current = Math.max(-FLIP_THRESHOLD, Math.min(FLIP_THRESHOLD, accum.current + dy))
+      if (accum.current >= FLIP_THRESHOLD) {
         setCollapseTopBar(true)
-      } else if (delta < -4) {
+      } else if (accum.current <= -FLIP_THRESHOLD) {
         setCollapseTopBar(false)
       }
-      lastScrollY.current = y
+    }
+    function onScroll() {
+      if (rafId.current) return
+      rafId.current = requestAnimationFrame(tick)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (rafId.current) cancelAnimationFrame(rafId.current)
+    }
   }, [])
 
   useEffect(() => {
