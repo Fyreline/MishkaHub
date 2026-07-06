@@ -453,7 +453,7 @@ function FilterPill({
 // centering a constant fight.
 // ---------------------------------------------------------------------------
 const NECK_H = 48 // px height of the neck region between poster row and mat
-const HALO_PAD = 8 // halo's side reach past the poster; must match MovieCard's -inset-x-2, and must not exceed --poster-gap (8px) or the halo bleeds onto neighboring posters
+const HALO_PAD = 6 // halo's side reach past the poster; must match MovieCard's -inset-x-1.5, and must stay under --poster-gap (8px) or the halo touches neighboring posters
 const HALO_CORNER = 16 // the halo's bottom corner radius; must match MovieCard's rounded-b-2xl
 const HALO_OVERHANG = 8 // how far the halo sticks out below the poster; must match MovieCard's -bottom-2
 const MAT_RADIUS = 18 // keep the neck's landing clear of the mat's rounded top corners
@@ -485,16 +485,23 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
   const joinY = HALO_OVERHANG // where the halo's bottom edge actually sits inside this svg
   const botY = NECK_H + 2 // draw 2px into the mat so the seam can't anti-alias into a hairline
   const midY = (joinY + NECK_H) * 0.5
-  // Bottom landing: symmetric about the poster's center, shrunk to whatever
-  // room the nearest mat corner leaves — so end posters get the same
-  // hourglass as middle ones, just a touch narrower, instead of one side
-  // bending in toward the middle of the row.
+  // Bottom landing: each side clamped independently to the room ITS OWN mat
+  // corner leaves, not to whichever side is tighter. A shared half-width
+  // (the previous approach) meant an edge poster's far side — which has the
+  // whole rest of the row to flare into — got squeezed down to match its
+  // near side, losing the generous flare middle posters get on both sides.
+  // Independent clamping keeps the far side identical to a middle poster's,
+  // while the near side lands exactly at MAT_RADIUS from the mat's edge —
+  // precisely where the mat's own rounded corner begins — so that side
+  // blends straight into the corner instead of landing short of it with a
+  // flat gap, or overhanging past it.
   const flare = 30 + topHW * 0.4
-  const botHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS, rowW - MAT_RADIUS - centerX), 24)
+  const leftFlareHW = Math.max(Math.min(topHW + flare, centerX - MAT_RADIUS), 24)
+  const rightFlareHW = Math.max(Math.min(topHW + flare, rowW - MAT_RADIUS - centerX), 24)
   const leftT = centerX - topHW
   const rightT = centerX + topHW
-  const leftB = centerX - botHW
-  const rightB = centerX + botHW
+  const leftB = centerX - leftFlareHW
+  const rightB = centerX + rightFlareHW
   // The tangent construction only holds if the curves start exactly at the
   // halo's visible bottom edge (joinY); the seam sliver above it is a plain
   // vertical run hidden behind the halo's solid base.
@@ -523,7 +530,7 @@ function liquidPath(rowW: number, centerX: number, posterW: number, growRaw: num
   // Merged: the full hourglass, waist thickening with s.
   const s = Math.min((t - NECK_TOUCH) / (1 - NECK_TOUCH), 1.12)
   const waistBase = Math.min(Math.max(topHW * 0.4, 12), 32)
-  const w = Math.max(0.5, Math.min(waistBase * s, botHW - 4, topHW - 3))
+  const w = Math.max(0.5, Math.min(waistBase * s, leftFlareHW - 4, rightFlareHW - 4, topHW - 3))
   return [
     `M${leftT},${seamY}`,
     `L${leftT},${joinY}`,
