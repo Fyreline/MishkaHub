@@ -1,0 +1,81 @@
+/* ============================================================================
+   AIZOME (藍染) — the shared household palette for Michi AND Mishka Hub.
+   Woodblock-print scheme built from the five chosen colours:
+     #C33C54 crimson (hanko seal / torii)   → `clay` accent (name kept for compat)
+     #254E70 indigo (Hokusai's blue)        → `ink` family + dark-mode ground
+     #37718E steel blue                     → `sky` (info, partner accent)
+     #8EE3EF pale cyan                      → dark-mode `sky`, data-viz
+     #AEF3E7 pale mint                      → paper cast, `olive` family, data-viz
+
+   CANONICAL COPY: learningLanguageMachine/apps/web/src/theme.css
+   MIRROR:         MishkaHub/apps/web/src/theme.css
+   Edit the canonical copy, then run learningLanguageMachine/scripts/sync-theme.sh
+   (see .claude/skills/theme-sync). Semantic token NAMES are frozen — both apps'
+   markup depends on them; re-skinning = changing VALUES here only.
+   ========================================================================== */
+
+@theme {
+  /* washi paper (cool mint-cast) & indigo ink */
+  --color-paper: #f7fbfa;
+  --color-paper-mid: #e9f3f1;
+  --color-paper-deep: #dcebe8;
+  --color-ink: #17293a;
+  --color-ink-mid: #2d4a63;
+  --color-ink-soft: #557186;
+  --color-line: rgb(23 41 58 / 0.12);
+  --color-line-strong: rgb(23 41 58 / 0.24);
+
+  /* THE accent — hanko crimson (was Anthropic clay; name kept, value new) */
+  --color-clay: #c33c54;
+  --color-clay-deep: #a92e45;
+
+  /* supporting cast */
+  --color-kraft: #d08770;   /* warm tertiary, "close" feedback, warn pills */
+  --color-oat: #d3eae2;     /* tonal fills */
+  --color-cloud: #90a5ab;   /* disabled */
+  --color-olive: #2e8b74;   /* success — teal-green from the mint family */
+  --color-sky: #37718e;     /* info + partner-user accent (exact chosen hex) */
+  --color-fig: #9c3f6d;     /* likes/hearts, soft errors — plum, distinct from clay */
+  --color-liquid: #c5e0dd;  /* Mishka's connector surface / Michi's trail */
+
+  /* data-viz categorical ramp */
+  --color-viz-1: #8ee3ef;
+  --color-viz-2: #aef3e7;
+  --color-viz-3: #f2c7cf;
+  --color-viz-4: #e8dfc0;
+
+  /* elevation, re-inked in indigo */
+  --shadow-float: 0 24px 48px -12px rgb(15 29 43 / 0.22);
+  --shadow-poster-drag: 0 32px 64px -16px rgb(15 29 43 / 0.38);
+}
+
+/* Night print — deep indigo ground (never black), cyan takes the lead role. */
+.dark {
+  --color-paper: #0f1d2b;
+  --color-paper-mid: #16283a;
+  --color-paper-deep: #1f3549;
+  --color-ink: #ecf6f4;
+  --color-ink-mid: #c8dbd9;
+  --color-ink-soft: #8fa9b3;
+  --color-line: rgb(236 246 244 / 0.10);
+  --color-line-strong: rgb(236 246 244 / 0.22);
+
+  --color-clay: #e05a72;
+  --color-clay-deep: #ea7288;
+
+  --color-kraft: #dd9a82;
+  --color-oat: #24404f;
+  --color-cloud: #6d8794;
+  --color-olive: #5fcfae;
+  --color-sky: #8ee3ef;
+  --color-fig: #d1729c;
+  --color-liquid: #223c4e;
+
+  --color-viz-1: #8ee3ef;
+  --color-viz-2: #aef3e7;
+  --color-viz-3: #e8a7b4;
+  --color-viz-4: #d8cba0;
+
+  --shadow-float: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+  --shadow-poster-drag: 0 32px 64px -16px rgb(0 0 0 / 0.6);
+}
