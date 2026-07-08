@@ -2,10 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'motion/react'
 import {
   api,
-  type FilmDetail,
   type Health,
   type Movie,
-  type SimilarFilm,
   type RecommendationItem,
   type RecommendationProfile,
 } from './api'
@@ -140,192 +138,48 @@ function SearchAutocomplete({ onSelect }: { onSelect: (id: number) => void }) {
   )
 }
 
-/** "You're looking at" + "More like this" panel — shown once a search result
- * (or a similar-film result) is selected. Recursively explorable: clicking a
- * similar-film card re-selects that film as the new focus. */
-function FilmExplorer({ filmId, onSelect }: { filmId: number; onSelect: (id: number) => void }) {
-  const [detail, setDetail] = useState<FilmDetail | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [detailLoading, setDetailLoading] = useState(true)
-
-  const [similar, setSimilar] = useState<SimilarFilm[]>([])
-  const [similarError, setSimilarError] = useState<string | null>(null)
-  const [similarLoading, setSimilarLoading] = useState(true)
-
-  const [quickWatch, setQuickWatch] = useState(false)
-  const [vibe, setVibe] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    setDetailLoading(true)
-    setDetailError(null)
-    setDetail(null)
-    api
-      .getFilm(filmId)
-      .then((d) => {
-        if (cancelled) return
-        setDetail(d)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setDetailError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [filmId])
-
-  useEffect(() => {
-    let cancelled = false
-    setSimilarLoading(true)
-    setSimilarError(null)
-    api
-      .getSimilarFilms(filmId, { limit: 12, maxRuntime: quickWatch ? 95 : undefined, vibe: vibe || undefined })
-      .then((res) => {
-        if (cancelled) return
-        setSimilar(res.items)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setSimilarError(err instanceof Error ? err.message : String(err))
-        setSimilar([])
-      })
-      .finally(() => {
-        if (!cancelled) setSimilarLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [filmId, quickWatch, vibe])
-
+/** A search pick's detail view, restyled to match the "Something new to
+ * watch" row's expanded panel exactly: same liquid mat, same header/ratings/
+ * where-to-watch/more-like-this content (RecommendationExpansionPanel does
+ * all of that, driven by useFilmDetail — this is just that component sat
+ * inside its own mat, with no connector neck, since there's no poster in a
+ * row to visually grow out of here). "More like this" and the "wrong film?"
+ * rematch both re-target this same panel in place (`onSelect` doubles as
+ * both `onNavigate` and `onOpenOverlay`) rather than stacking a second
+ * overlay on top — matching the old FilmExplorer's "recursively explorable"
+ * behavior of the search flow. */
+function FilmExplorer({
+  filmId,
+  onSelect,
+  onClose,
+}: {
+  filmId: number
+  onSelect: (id: number) => void
+  onClose: () => void
+}) {
   return (
-    <section className="mt-8 border-t border-line pt-8">
-      {detailLoading && (
-        <div className="grid gap-6 sm:grid-cols-[minmax(0,180px)_1fr]">
-          <div className="aspect-2/3 w-full max-w-[180px] animate-pulse rounded-sm bg-paper-deep" />
-          <FilmHeaderSkeleton />
-        </div>
-      )}
-      {detailError && !detailLoading && (
-        <div className="rounded-lg border border-fig/30 bg-fig/10 px-4 py-3 text-sm text-fig">
-          Nothing here yet — {detailError}
-        </div>
-      )}
-
-      {detail && !detailLoading && (
-        <div className="grid gap-6 sm:grid-cols-[minmax(0,180px)_1fr]">
-          {detail.poster && (
-            <img
-              src={detail.poster}
-              alt={detail.title}
-              className="aspect-2/3 w-full max-w-[180px] rounded-sm object-cover shadow-float"
-            />
-          )}
-          <div>
-            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-cloud">
-              You&apos;re looking at
-            </span>
-            <h3 className="mt-1 font-serif text-2xl text-ink">{detail.title}</h3>
-            <p className="mt-0.5 text-xs text-ink-soft">
-              {detail.year ?? '—'}
-              {detail.runtime_min ? ` · ${detail.runtime_min} min` : ''}
-            </p>
-            {detail.genres.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {detail.genres.map((g) => (
-                  <span key={g} className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-ink-soft">
-                    {g}
-                  </span>
-                ))}
-              </div>
-            )}
-            {detail.overview && <p className="mt-3 text-sm leading-relaxed text-ink-mid">{detail.overview}</p>}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h4 className="font-display text-lg font-medium text-ink">More like this</h4>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setQuickWatch((v) => !v)}
-              aria-pressed={quickWatch}
-              className={`min-h-11 rounded-md border px-2.5 py-1.5 text-xs font-medium transition sm:min-h-0 ${
-                quickWatch ? 'border-clay bg-clay/10 text-clay-deep' : 'border-line-strong bg-white text-ink-mid hover:bg-oat dark:bg-paper-mid'
-              }`}
-            >
-              Quick watch (≤95 min)
-            </button>
-            <select
-              value={vibe}
-              onChange={(e) => setVibe(e.target.value)}
-              className="min-h-11 rounded-md border border-line-strong bg-white px-2 py-1.5 text-xs text-ink-mid outline-none focus:border-clay sm:min-h-0 dark:bg-paper-mid"
-            >
-              {VIBE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          {similarLoading && (
-            <div className="grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="aspect-2/3 animate-pulse rounded-sm bg-paper-deep" />
-              ))}
-            </div>
-          )}
-
-          {similarError && !similarLoading && (
-            <div className="rounded-lg border border-fig/30 bg-fig/10 px-4 py-3 text-sm text-fig">
-              Nothing here yet — {similarError}
-            </div>
-          )}
-
-          {!similarLoading && !similarError && similar.length === 0 && (
-            <p className="text-sm text-ink-soft">Nothing here yet. Try loosening the filters above.</p>
-          )}
-
-          {!similarLoading && similar.length > 0 && (
-            <div
-              className="grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"
-              style={{ perspective: '800px' }}
-            >
-              {similar.map((s) => (
-                <MovieCard
-                  key={s.film.id}
-                  movie={{
-                    id: s.film.id,
-                    title: s.film.title,
-                    year: s.film.year != null ? String(s.film.year) : null,
-                    overview: null,
-                    poster: s.film.poster,
-                    vote_average: null,
-                  }}
-                  badges={undefined}
-                  onClick={() => onSelect(s.film.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
+    <motion.div
+      initial={{ opacity: 0, y: -16, scaleY: 0.72, scaleX: 0.98 }}
+      animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+      exit={{ opacity: 0, y: -12, scaleY: 0.9, transition: { duration: 0.16, ease: 'easeIn' } }}
+      transition={{
+        type: 'spring',
+        stiffness: 340,
+        damping: 28,
+        mass: 0.9,
+        opacity: { duration: 0.18, ease: 'easeOut' },
+      }}
+      className="rounded-2xl bg-liquid p-2 sm:p-2.5"
+    >
+      <RecommendationExpansionPanel filmId={filmId} onNavigate={onSelect} onClose={onClose} onOpenOverlay={onSelect} />
+    </motion.div>
   )
 }
 
 // Mirrors Tailwind's default breakpoints AND the exact grid-cols-* steps the
-// Cat-alogue/search/FilmExplorer poster grids use (3/4/5/6/8) — see
-// Catalogue.tsx's grid className. Kept in sync manually since there's no
-// shared constant for it yet.
+// Cat-alogue poster grid uses (3/4/5/6/8) — see Catalogue.tsx's grid
+// className. Kept in sync manually since there's no shared constant for it
+// yet.
 const COLUMN_BREAKPOINTS: [minWidth: number, columns: number][] = [
   [1280, 8],
   [1024, 6],
@@ -1529,7 +1383,23 @@ function AuthenticatedApp() {
             )}
 
             <div className="border-t border-line pt-6">
-              {selectedFilmId != null && <FilmExplorer filmId={selectedFilmId} onSelect={setSelectedFilmId} />}
+              <AnimatePresence>
+                {selectedFilmId != null && (
+                  <FilmExplorer
+                    filmId={selectedFilmId}
+                    onSelect={setSelectedFilmId}
+                    onClose={() => setSelectedFilmId(null)}
+                  />
+                )}
+              </AnimatePresence>
+              {/* Divider sits BELOW a search result, not above it — the one
+                  above (this whole block's own border-t) already separates
+                  the search box from whatever's under it; stacking a second
+                  divider directly above the result too just read as a
+                  redundant double line. This one only appears while a
+                  result is actually open, separating it from the
+                  recommendations row that follows. */}
+              {selectedFilmId != null && <div className="my-8 border-t border-line" aria-hidden />}
 
               <UnseenRecommendationsRow />
             </div>

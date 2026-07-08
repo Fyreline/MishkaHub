@@ -343,7 +343,15 @@ export function MoreLikeThisSection({
                   </div>
                 )}
               </div>
-              <div className="mt-1 line-clamp-2 text-[11px] leading-tight text-ink-mid">{s.film.title}</div>
+              {/* h-7 reserves the full 2-line height (11px * leading-tight ≈
+                  13.75px/line) regardless of the actual title's length —
+                  without it, a 1-line title made this card (and, since the
+                  poster sits above it in normal block flow, the whole card's
+                  footprint) shorter than a 2-line neighbor, and the row's
+                  shared cross-axis stretch nudged posters out of alignment
+                  with each other depending on wherever they landed relative
+                  to the row's tallest title. */}
+              <div className="mt-1 line-clamp-2 h-7 text-[11px] leading-tight text-ink-mid">{s.film.title}</div>
             </button>
           ))}
         </div>
