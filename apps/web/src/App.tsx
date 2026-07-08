@@ -1350,6 +1350,60 @@ const NAV_TABS: { view: View; label: string }[] = [
   { view: 'services', label: 'Services' },
 ]
 
+/** One flat, monochrome glyph per nav tab for the mobile bottom bar (mirrors
+ * Michi's TabIcon idiom): single-colour, currentColor stroke, no gradients —
+ * so the active-state colour swap is the only signal. */
+function NavTabIcon({ view }: { view: View }) {
+  switch (view) {
+    case 'catalogue': // grid of posters
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden className="h-5 w-5">
+          <rect x="3" y="3" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <rect x="11.5" y="3" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <rect x="3" y="11.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      )
+    case 'owned': // owned = a ticked-off disc
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden className="h-5 w-5">
+          <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path
+            d="M6.8 10.2 9 12.4 13.4 7.6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
+    case 'upcoming': // coming soon = a clock
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden className="h-5 w-5">
+          <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path
+            d="M10 6v4l2.6 2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
+    case 'services': // streaming services = a screen on a stand
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden className="h-5 w-5">
+          <rect x="3" y="4.5" width="14" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M7.5 16.5h5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      )
+    case 'settings':
+      return null
+  }
+}
+
 /** Gates the whole app behind the two-person login (docs/phases/PHASE-4-accounts-feedback.md).
  * `bootstrap()` tries a silent refresh from a stored refresh token on first
  * mount so a page reload doesn't force a re-login; `subscribe()` re-renders
@@ -1387,90 +1441,15 @@ function AuthenticatedApp() {
     api.health().then(setHealth).catch((e) => setHealthError(String(e)))
   }, [])
 
-  // Below `sm`, the header is two rows (wordmark+controls, then nav tabs) —
-  // tall enough that Catalogue's own sticky filter bar (which sticks right
-  // under this header) needs real breathing room below it. Collapsing row 1
-  // away on scroll-down (row 2's tabs stay put, just slide up to take its
-  // place) buys that room back instead of stacking two sticky bars' full
-  // height permanently. `--app-header-h` is measured live off the actual
-  // header element (rather than assumed) so Catalogue's sticky offset never
-  // drifts out of sync with whatever height the header currently is.
+  // Catalogue's own sticky filter bar sticks directly under this header and
+  // reads --app-header-h (set by the ResizeObserver below) as its top offset,
+  // so it always lands flush against the header at whatever height it renders
+  // (e.g. the wordmark wrapping at odd viewport widths). The header is now a
+  // single short row at every breakpoint — on mobile the nav tabs live in a
+  // fixed bottom bar rather than a second header row — so the old
+  // scroll-collapse machinery that hid the top row to buy back space for that
+  // sticky bar no longer has a problem to solve and has been removed.
   const headerRef = useRef<HTMLElement>(null)
-  const [collapseTopBar, setCollapseTopBar] = useState(false)
-  // Two separate failure modes feed this state, and each needs its own
-  // defense:
-  //
-  // 1. Event noise — iOS momentum scroll fires many small events per
-  //    gesture, some nudging slightly backwards (sub-pixel rounding,
-  //    rubber-banding) even mid-fling. Defense: flip on NET movement
-  //    accumulated across frames (clamped to +-FLIP_THRESHOLD, one
-  //    rAF-scheduled read per frame), so a -1px blip erodes progress
-  //    instead of flipping state. (Don't "improve" this to
-  //    reset-on-direction-change: that let a single blip erase a whole
-  //    fling's progress and the header never collapsed at all.)
-  //
-  // 2. Self-induced feedback — flipping the state collapses/expands row 1,
-  //    which changes the sticky header's height by ~50px, which shifts the
-  //    page layout, which fires scroll events whose deltas (bigger than the
-  //    threshold!) read as the user scrolling the OTHER way → flip back →
-  //    shift again → a permanent bounce with zero input. This is what a
-  //    tiny drag-down during the collapse animation triggered. Defense: a
-  //    lockout window after every flip, a bit longer than the 200ms
-  //    grid-rows transition, during which deltas are swallowed and the
-  //    baseline re-anchors every frame — the header's own layout shifts can
-  //    never count as user scrolling.
-  const lastY = useRef(0)
-  const accum = useRef(0)
-  const rafId = useRef(0)
-  const collapsedRef = useRef(false)
-  const lockUntil = useRef(0)
-  const FLIP_THRESHOLD = 24
-  const FLIP_LOCKOUT_MS = 300
-
-  useEffect(() => {
-    function flip(next: boolean, now: number) {
-      if (collapsedRef.current === next) return
-      collapsedRef.current = next
-      lockUntil.current = now + FLIP_LOCKOUT_MS
-      accum.current = 0
-      setCollapseTopBar(next)
-    }
-    function tick() {
-      rafId.current = 0
-      const y = window.scrollY
-      const now = performance.now()
-      if (y <= 12) {
-        // Always allowed, even mid-lockout: at the very top the expanded
-        // header only grows downward, so re-expanding can't move scrollY
-        // and can't re-enter the feedback loop.
-        lastY.current = y
-        accum.current = 0
-        flip(false, now)
-        return
-      }
-      if (now < lockUntil.current) {
-        lastY.current = y // swallow the delta, keep the baseline fresh
-        return
-      }
-      const dy = y - lastY.current
-      lastY.current = y
-      accum.current = Math.max(-FLIP_THRESHOLD, Math.min(FLIP_THRESHOLD, accum.current + dy))
-      if (accum.current >= FLIP_THRESHOLD) {
-        flip(true, now)
-      } else if (accum.current <= -FLIP_THRESHOLD) {
-        flip(false, now)
-      }
-    }
-    function onScroll() {
-      if (rafId.current) return
-      rafId.current = requestAnimationFrame(tick)
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      window.removeEventListener('scroll', onScroll)
-      if (rafId.current) cancelAnimationFrame(rafId.current)
-    }
-  }, [])
 
   useEffect(() => {
     const el = headerRef.current
@@ -1486,70 +1465,39 @@ function AuthenticatedApp() {
     <div className="min-h-full bg-paper text-ink">
       <header ref={headerRef} className="sticky top-0 z-20 border-b border-line bg-paper/95">
         <div className="mx-auto max-w-6xl px-5 py-3 sm:py-4">
-          {/* Row 1 (wordmark + desktop nav + controls) collapses to nothing
-              on mobile scroll-down via the grid-rows 1fr/0fr trick (animates
-              cleanly without knowing the row's pixel height up front) — the
-              `sm:grid-rows-[1fr]` override means desktop never collapses it,
-              since the desktop single-row header doesn't have the height
-              problem this is solving. */}
-          <div
-            className={`grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out sm:grid-rows-[1fr] ${
-              collapseTopBar ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
-            }`}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <div className="flex items-center justify-between gap-3 pb-3 sm:pb-0">
-                <div className="flex shrink-0 items-center gap-2.5">
-                  <CatMark />
-                  <span className="font-display text-lg font-medium tracking-[-0.005em]">
-                    Mishka <span className="text-clay">Hub</span>
-                  </span>
-                </div>
-                {/* Desktop/tablet: tabs sit inline, centered between the wordmark
-                    and the controls. Below `sm`, there's not enough width for
-                    logo + 4 tabs + 4 controls on one line without either
-                    truncating text or squeezing the tabs down to nothing — so
-                    they move to their own full-width row instead (below). */}
-                <nav className="hidden items-center gap-1 sm:flex">
-                  {NAV_TABS.map((tab) => (
-                    <button
-                      key={tab.view}
-                      type="button"
-                      onClick={() => setView(tab.view)}
-                      aria-pressed={view === tab.view}
-                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                        view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </nav>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
-                  <ThemeToggle />
-                  <SignOutButton onClick={logout} />
-                </div>
-              </div>
+          {/* Single row at every breakpoint: wordmark + (desktop-only) inline
+              nav + controls. On mobile the nav tabs live in the fixed bottom
+              bar (see MobileTabBar below) instead of a second header row. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex shrink-0 items-center gap-2.5">
+              <CatMark />
+              <span className="font-display text-lg font-medium tracking-[-0.005em]">
+                Mishka <span className="text-clay">Hub</span>
+              </span>
+            </div>
+            {/* Desktop/tablet: tabs sit inline, centered between the wordmark
+                and the controls. Below `sm` they move to the bottom bar. */}
+            <nav className="hidden items-center gap-1 sm:flex">
+              {NAV_TABS.map((tab) => (
+                <button
+                  key={tab.view}
+                  type="button"
+                  onClick={() => setView(tab.view)}
+                  aria-pressed={view === tab.view}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                    view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
+              <ThemeToggle />
+              <SignOutButton onClick={logout} />
             </div>
           </div>
-          {/* Mobile-only second row: full viewport width to scroll within,
-              rather than fighting the logo/controls for leftover space. */}
-          <nav className="-mx-5 flex items-center gap-1 overflow-x-auto px-5 sm:hidden">
-            {NAV_TABS.map((tab) => (
-              <button
-                key={tab.view}
-                type="button"
-                onClick={() => setView(tab.view)}
-                aria-pressed={view === tab.view}
-                className={`min-h-11 shrink-0 rounded-md px-2.5 text-xs font-medium transition ${
-                  view === tab.view ? 'bg-clay/10 text-clay-deep' : 'text-ink-mid hover:bg-oat'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
         </div>
       </header>
 
@@ -1593,13 +1541,32 @@ function AuthenticatedApp() {
         )}
       </main>
 
-      <footer className="border-t border-line py-6 text-center font-mono text-[11px] text-ink-soft">
+      <footer className="border-t border-line pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] text-center font-mono text-[11px] text-ink-soft sm:pb-6">
         <div className="mb-3 flex justify-center">
           <StatusPill health={health} error={healthError} />
         </div>
         <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
         <p>Streaming availability by JustWatch. Mishka Hub is a private, non-commercial project.</p>
       </footer>
+
+      {/* Mobile bottom bar — 64px tall, safe-area padded, hidden from `sm` up
+          (desktop keeps the inline header nav). Mirrors Michi's pattern. */}
+      <nav className="fixed inset-x-0 bottom-0 z-20 flex h-16 items-stretch border-t border-line bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-saturate-150 sm:hidden">
+        {NAV_TABS.map((tab) => (
+          <button
+            key={tab.view}
+            type="button"
+            onClick={() => setView(tab.view)}
+            aria-current={view === tab.view ? 'page' : undefined}
+            className={`flex flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap text-[11px] font-medium leading-tight transition ${
+              view === tab.view ? 'text-clay' : 'text-ink-soft'
+            }`}
+          >
+            <NavTabIcon view={tab.view} />
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </div>
   )
 }
