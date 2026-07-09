@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, ApiError, type Provider } from '../api'
+import { getUser, logout } from '../auth'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -289,6 +290,24 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
           </div>
         </>
       )}
+
+      {/* account — the header's sign-out moved here (2026-07-09, matching
+          Michi: slim top bars on both apps) */}
+      <div className="mt-8 flex items-center justify-between rounded-lg border border-line bg-paper-mid p-5">
+        <div>
+          <h2 className="font-display text-base font-medium text-ink">Account</h2>
+          <p className="mt-1 text-sm text-ink-soft">
+            Signed in as {getUser()?.display_name ?? 'your household login'}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="rounded-md border border-line-strong px-4 py-2 text-sm font-medium text-ink transition hover:bg-oat"
+        >
+          Sign out
+        </button>
+      </div>
     </section>
   )
 }

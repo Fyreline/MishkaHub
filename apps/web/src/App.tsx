@@ -15,7 +15,7 @@ import { OwnedPage } from './components/OwnedPage'
 import { UpcomingPage } from './components/UpcomingPage'
 import { ServiceInsightsPage } from './components/ServiceInsightsPage'
 import { LoginScreen } from './components/LoginScreen'
-import { bootstrap, getUser, logout, subscribe, type AuthUser } from './auth'
+import { bootstrap, getUser, subscribe, type AuthUser } from './auth'
 import {
   FilmHeaderSkeleton,
   MoreLikeThisSection,
@@ -1157,29 +1157,6 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function SignOutButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="Sign out"
-      title="Sign out"
-      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-line-strong bg-white text-ink-mid transition hover:bg-oat hover:text-ink dark:bg-paper-mid"
-    >
-      <svg viewBox="0 0 20 20" aria-hidden className="h-4 w-4">
-        <path
-          d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M13 13.5 16.5 10 13 6.5M7 10h9.3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-  )
-}
-
 /** A small, tasteful cat-ear mark next to the wordmark — not an emoji, part of the brand. */
 function CatMark() {
   return (
@@ -1346,10 +1323,11 @@ function AuthenticatedApp() {
                 </button>
               ))}
             </nav>
+            {/* slim on purpose: sign-out lives in Settings now (2026-07-09,
+                matching Michi) */}
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <SettingsButton onClick={() => setView(view === 'settings' ? 'catalogue' : 'settings')} />
               <ThemeToggle />
-              <SignOutButton onClick={logout} />
             </div>
           </div>
         </div>
