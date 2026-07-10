@@ -1,6 +1,6 @@
 /* ============================================================================
-   AIZOME (藍染) — the shared household palette for Michi AND Mishka Hub.
-   Woodblock-print scheme built from the five chosen colours:
+   AIZOME (藍染) — the shared household palette for Mishka Hub, Michi, Japan
+   2026, AND Kakeibo. Woodblock-print scheme built from the five chosen colours:
      #C33C54 crimson (hanko seal / torii)   → `clay` accent (name kept for compat)
      #254E70 indigo (Hokusai's blue)        → `ink` family + dark-mode ground
      #37718E steel blue                     → `sky` (info, partner accent)
@@ -8,9 +8,10 @@
      #AEF3E7 pale mint                      → paper cast, `olive` family, data-viz
 
    CANONICAL COPY: learningLanguageMachine/apps/web/src/theme.css
-   MIRROR:         MishkaHub/apps/web/src/theme.css
+   MIRRORS:        MishkaHub/apps/web/src/theme.css, Japan_website/apps/web/src/theme.css,
+                    Finances/apps/web/src/theme.css (Kakeibo), sukumo/apps/web/src/theme.css
    Edit the canonical copy, then run learningLanguageMachine/scripts/sync-theme.sh
-   (see .claude/skills/theme-sync). Semantic token NAMES are frozen — both apps'
+   (see .claude/skills/theme-sync). Semantic token NAMES are frozen — every app's
    markup depends on them; re-skinning = changing VALUES here only.
    ========================================================================== */
 
