@@ -332,6 +332,7 @@ export function DetailDrawer({
     similar,
     similarError,
     similarLoading,
+    setSimilarLimit,
     ratingBusy,
     ratingError,
     likedBusy,
@@ -567,6 +568,7 @@ export function DetailDrawer({
                 similarLoading={similarLoading}
                 similarError={similarError}
                 onNavigate={onNavigate}
+                onWantCount={setSimilarLimit}
               />
             </div>
           </div>

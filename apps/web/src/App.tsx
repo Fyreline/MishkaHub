@@ -548,6 +548,7 @@ function RecommendationExpansionPanel({
     similar,
     similarError,
     similarLoading,
+    setSimilarLimit,
     ratingBusy,
     ratingError,
     likedBusy,
@@ -780,6 +781,7 @@ function RecommendationExpansionPanel({
               similarLoading={similarLoading}
               similarError={similarError}
               onNavigate={onOpenOverlay}
+              onWantCount={setSimilarLimit}
             />
           </div>
         </div>
@@ -792,9 +794,12 @@ function RecommendationExpansionPanel({
  * unwatched/stale recommendations with its own profile toggle + filter bar
  * (genres on one row, runtime + vibe on the next), independent of the
  * Cat-alogue's own filters per the household's "leave the Cat-alogue alone"
- * instruction. Clicking a card expands a horizontal detail panel in place,
- * right below the row; clicking the same card again (or its own Close
- * button) collapses it. */
+ * instruction. "<"/">" buttons page through further ranked recommendations
+ * a row at a time, lazily — each click fetches exactly the next page from
+ * the server (offset-based, see the fetch effect below) rather than
+ * pre-loading everything up front. Clicking a card expands a horizontal
+ * detail panel in place, right below the row; clicking the same card again
+ * (or its own Close button) collapses it. */
 function UnseenRecommendationsRow() {
   const [profile, setProfile] = useState<RecommendationProfile>('together')
   const [runtimeBuckets, setRuntimeBuckets] = useState<RuntimeBucket[]>([])
@@ -804,6 +809,16 @@ function UnseenRecommendationsRow() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const columns = useResponsiveColumns()
+
+  // Paging through the ranked recommendation list a screen-width at a time
+  // — `offset = page * columns` so each click requests exactly the next
+  // row's worth (server-side, via /api/recommendations' existing offset
+  // param — this genuinely re-ranks against the next slice rather than
+  // pre-fetching a big batch and slicing client-side). `hasMore` is a
+  // heuristic: a full page came back, so there MIGHT be another; a short
+  // page means we've reached the true end of the ranked pool.
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
 
   const [expanded, setExpanded] = useState<{ filmId: number; index: number } | null>(null)
   const [overlayFilmId, setOverlayFilmId] = useState<number | null>(null)
@@ -863,7 +878,8 @@ function UnseenRecommendationsRow() {
     api
       .getRecommendations({
         profile,
-        limit: 8,
+        limit: columns,
+        offset: page * columns,
         runtime_buckets: runtimeBuckets.length ? runtimeBuckets.join(',') : undefined,
         genres: genres.length ? genres.join(',') : undefined,
         vibe: vibe || undefined,
@@ -871,6 +887,7 @@ function UnseenRecommendationsRow() {
       .then((res) => {
         if (cancelled) return
         setItems(res.items)
+        setHasMore(res.items.length === columns)
       })
       .catch((err) => {
         if (cancelled) return
@@ -883,18 +900,21 @@ function UnseenRecommendationsRow() {
     return () => {
       cancelled = true
     }
-  }, [profile, runtimeBuckets, genres, vibe])
+  }, [profile, runtimeBuckets, genres, vibe, columns, page])
 
-  // Filter changes invalidate whatever was expanded (its position/relevance
-  // may no longer make sense against the new result set).
+  // Filter/column changes invalidate both whatever was expanded (its
+  // position/relevance may no longer make sense against the new result set)
+  // and the current page (a different page size shifts what `offset` even
+  // means, and a fresh filter has its own fresh first page).
   useEffect(() => {
     clearSwitchTimers()
     setSwitchTarget(null)
     setConnectorPhase('steady')
     setExpanded(null)
-  }, [profile, runtimeBuckets, genres, vibe])
+    setPage(0)
+  }, [profile, runtimeBuckets, genres, vibe, columns])
 
-  const visible = items.slice(0, columns)
+  const visible = items
 
   function handleCardClick(filmId: number, index: number) {
     clearSwitchTimers()
@@ -991,6 +1011,31 @@ function UnseenRecommendationsRow() {
       </div>
 
       <div className="mt-5">
+        <div className="mb-2 flex items-center justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0 || loading}
+            aria-label="Previous set of recommendations"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-white text-ink-mid transition hover:bg-oat disabled:opacity-40 disabled:hover:bg-white dark:bg-paper-mid dark:disabled:hover:bg-paper-mid"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden className="h-4 w-4">
+              <path d="M12.5 5 7.5 10l5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore || loading}
+            aria-label="Next set of recommendations"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-line-strong bg-white text-ink-mid transition hover:bg-oat disabled:opacity-40 disabled:hover:bg-white dark:bg-paper-mid dark:disabled:hover:bg-paper-mid"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden className="h-4 w-4">
+              <path d="M7.5 5 12.5 10l-5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
         {loading && (
           <div
             className="grid grid-cols-3 gap-[var(--poster-gap)] sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 lg:gap-[var(--poster-gap-lg)] xl:grid-cols-8"

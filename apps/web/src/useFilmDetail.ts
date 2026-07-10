@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   api,
   ApiError,
@@ -60,6 +60,12 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
   const [similar, setSimilar] = useState<SimilarFilm[]>([])
   const [similarError, setSimilarError] = useState<string | null>(null)
   const [similarLoading, setSimilarLoading] = useState(true)
+  // MoreLikeThisSection measures its own row width and calls setSimilarLimit
+  // once it knows how many cards would actually fill it (see its onWantCount
+  // prop) — starts at a small default so the first paint doesn't wait on a
+  // layout measurement.
+  const [similarLimit, setSimilarLimit] = useState(8)
+  const prevSimilarFilmIdRef = useRef(filmId)
 
   const [ratingBusy, setRatingBusy] = useState<Record<UserKey, boolean>>({ my: false, partner: false })
   const [ratingError, setRatingError] = useState<Record<UserKey, string | null>>({ my: null, partner: null })
@@ -129,11 +135,21 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
 
   useEffect(() => {
     let cancelled = false
-    setSimilarLoading(true)
+    // Only reset to the empty/loading state on a genuine film change — a
+    // limit bump (the row asking for more to fill its width) re-runs this
+    // same effect but should top up quietly: keep showing the films already
+    // on screen while the bigger batch loads, then swap in place, rather
+    // than flashing back to a skeleton every time the row measures itself.
+    const filmChanged = prevSimilarFilmIdRef.current !== filmId
+    prevSimilarFilmIdRef.current = filmId
     setSimilarError(null)
-    setSimilar([])
+    if (filmChanged) {
+      setSimilar([])
+      setSimilarLoading(true)
+      setSimilarLimit(8)
+    }
     api
-      .getSimilarFilms(filmId, { limit: 8 })
+      .getSimilarFilms(filmId, { limit: filmChanged ? 8 : similarLimit })
       .then((res) => {
         if (cancelled) return
         setSimilar(res.items)
@@ -148,7 +164,8 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
     return () => {
       cancelled = true
     }
-  }, [filmId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filmId, similarLimit])
 
   async function handleSetRating(key: UserKey, rating: number) {
     if (!detail) return
@@ -274,6 +291,7 @@ export function useFilmDetail(filmId: number, onNavigate: (id: number) => void) 
     similar,
     similarError,
     similarLoading,
+    setSimilarLimit,
     ratingBusy,
     ratingError,
     likedBusy,

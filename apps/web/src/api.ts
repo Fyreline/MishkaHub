@@ -216,6 +216,7 @@ export interface ServiceInsightsResponse {
 export interface GetRecommendationsParams {
   profile?: RecommendationProfile
   limit?: number
+  offset?: number
   genres?: string
   runtime_buckets?: string
   vibe?: string

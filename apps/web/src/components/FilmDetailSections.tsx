@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { FilmAvailability, FilmDetail, SimilarFilm } from '../api'
 import { userIdForKey, type UserKey } from '../useFilmDetail'
 import { StarRatingInput } from './StarRatingInput'
@@ -88,6 +89,14 @@ export function WhereToWatchSkeleton() {
  * row of fixed-width cards does that at any viewport width, including
  * mobile, without the grid having to awkwardly shrink columns. */
 const MORE_LIKE_THIS_CARD_WIDTH = 'w-20 sm:w-24'
+// Real px values behind the class above (Tailwind w-20/w-24) and its gap-2 —
+// read via matchMedia rather than measuring a rendered card, since on the
+// very first layout pass there may be zero cards on screen yet (still
+// loading, or a just-mounted panel) to measure.
+const MORE_LIKE_THIS_CARD_PX = 80
+const MORE_LIKE_THIS_CARD_PX_SM = 96
+const MORE_LIKE_THIS_GAP_PX = 8
+const MORE_LIKE_THIS_MAX_COUNT = 30 // well under the /similar endpoint's limit=50 cap
 
 /** Placeholder row matching MoreLikeThisSection's real one-line layout. */
 export function MoreLikeThisSkeleton() {
@@ -289,14 +298,38 @@ export function MoreLikeThisSection({
   similarLoading,
   similarError,
   onNavigate,
+  onWantCount,
 }: {
   similar: SimilarFilm[]
   similarLoading: boolean
   similarError: string | null
   onNavigate: (id: number) => void
+  /** Called with however many cards would fill this row edge-to-edge at its
+   * current width — the household wanted the row to always sit snug against
+   * the panel's full width (at the current poster size) rather than leaving
+   * a trailing gap once the initial small batch runs out. The section only
+   * asks; the caller (useFilmDetail's setSimilarLimit) decides whether/how
+   * to fetch more. */
+  onWantCount?: (count: number) => void
 }) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = wrapperRef.current
+    const notify = onWantCount
+    if (!el || !notify) return
+    function measure() {
+      const cardPx = window.matchMedia('(min-width: 640px)').matches ? MORE_LIKE_THIS_CARD_PX_SM : MORE_LIKE_THIS_CARD_PX
+      const count = Math.floor((el!.clientWidth + MORE_LIKE_THIS_GAP_PX) / (cardPx + MORE_LIKE_THIS_GAP_PX))
+      notify!(Math.max(8, Math.min(count, MORE_LIKE_THIS_MAX_COUNT)))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [onWantCount])
   return (
-    <div className="border-t border-line pt-4">
+    <div ref={wrapperRef} className="border-t border-line pt-4">
       <h4 className="text-sm font-medium text-ink">More like this</h4>
 
       {similarLoading && (
