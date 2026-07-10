@@ -3,13 +3,14 @@
   <!-- Classic video-camera glyph, matching the household's reference:
        a small circle (left) + larger circle (right) resting tangent ON the
        body's top edge (not sunk into it), a rectangular body, and a
-       triangular lens flag on the left side pointing outward. Drawn as
-       line-art outline (Michi torii technique) so the solid crimson cat
-       badge stays legible inside the open paper-white body. -->
+       triangular lens flag on the RIGHT side, its point touching the body
+       and flaring out to a wide end away from it. Drawn as line-art outline
+       (Michi torii technique) so the solid crimson cat badge stays legible
+       inside the open paper-white body. -->
   <circle cx="13.15" cy="11.6" r="2.8" fill="none" stroke="#c33c54" stroke-width="2" />
   <circle cx="21.8" cy="10" r="4.4" fill="none" stroke="#c33c54" stroke-width="2" />
   <rect x="9.25" y="14.4" width="18" height="12" rx="1" fill="none" stroke="#c33c54" stroke-width="2" />
-  <path d="M9.25,17.4 L9.25,23.4 L4.75,20.4 Z" fill="none" stroke="#c33c54" stroke-width="2" stroke-linejoin="round" />
+  <path d="M27.25,20.4 L30.5,17.4 L30.5,23.4 Z" fill="none" stroke="#c33c54" stroke-width="2" stroke-linejoin="round" />
   <!-- The household cat mark, centered in the body -->
   <g transform="translate(12.81,15.73) scale(0.34)">
     <path
