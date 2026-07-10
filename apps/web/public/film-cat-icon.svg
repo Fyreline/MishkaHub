@@ -1,5 +1,7 @@
 <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="6" fill="#f7fbfa" />
+  <!-- No background tile — transparent, matching Michi's icon (the browser
+       tab/OS/home-screen surface shows through, same as every other
+       household app icon). -->
   <!-- Classic video-camera glyph, matching the household's reference:
        a small circle (left) + larger circle (right) resting tangent ON the
        body's top edge (not sunk into it), a rectangular body, and a

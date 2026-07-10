@@ -1203,16 +1203,26 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
 }
 
 /** A small, tasteful cat-ear mark next to the wordmark — not an emoji, part of the brand. */
+/** Same glyph as public/film-cat-icon.svg (the favicon/home-screen icon) —
+ * an old film camera in profile with the household cat badged on its body —
+ * kept in sync manually since this one needs `currentColor`/CSS vars to stay
+ * theme-aware, which a standalone favicon file can't use. */
 function CatMark() {
   return (
-    <svg viewBox="0 0 32 28" aria-hidden className="h-7 w-8 text-clay">
-      <path
-        d="M4,9 L2,1.5 L10,7.5 Q16,4 22,7.5 L30,1.5 L28,9 Q30.5,14.5 28,20 Q24.5,26 16,26 Q7.5,26 4,20 Q1.5,14.5 4,9 Z"
-        fill="currentColor"
-      />
-      <circle cx="12" cy="16.5" r="1.6" fill="var(--color-paper)" />
-      <circle cx="20" cy="16.5" r="1.6" fill="var(--color-paper)" />
-      <path d="M15,20 L17,20 L16,21.3 Z" fill="var(--color-paper)" />
+    <svg viewBox="0 0 32 32" aria-hidden className="h-8 w-8 text-clay">
+      <circle cx="8.75" cy="11.6" r="2.8" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="17.4" cy="10" r="4.4" fill="none" stroke="currentColor" strokeWidth="2" />
+      <rect x="4.85" y="14.4" width="18" height="12" rx="1" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M22.85,20.4 L26.1,17.4 L26.1,23.4 Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <g transform="translate(8.41,15.73) scale(0.34)">
+        <path
+          d="M4,9 L2,1.5 L10,7.5 Q16,4 22,7.5 L30,1.5 L28,9 Q30.5,14.5 28,20 Q24.5,26 16,26 Q7.5,26 4,20 Q1.5,14.5 4,9 Z"
+          fill="currentColor"
+        />
+        <circle cx="12" cy="16.5" r="1.6" fill="var(--color-paper)" />
+        <circle cx="20" cy="16.5" r="1.6" fill="var(--color-paper)" />
+        <path d="M15,20 L17,20 L16,21.3 Z" fill="var(--color-paper)" />
+      </g>
     </svg>
   )
 }
