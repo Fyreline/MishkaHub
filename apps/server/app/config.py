@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     def tmdb_configured(self) -> bool:
         return bool(self.tmdb_read_token or self.tmdb_api_key)
 
+    # --- Sukumo's read-only sibling client (Sukumo docs/API.md §4,
+    # docs/phases/PHASE-3-siblings.md there). Static bearer token, deliberately
+    # NOT the user-JWT flow — Sukumo never holds a household password. Unset =>
+    # GET /api/activity/service answers 503. ---
+    service_token: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -407,6 +407,18 @@ built here).
 
 ---
 
+## Sibling integrations — Sukumo
+
+Static-bearer-token endpoint for Sukumo (a separate read-only sibling app) to pull a small
+household activity summary. Not part of the per-user JWT auth model above — deliberately a
+different auth scheme, since Sukumo never holds a household password (`MISHKA_SERVICE_TOKEN`).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/activity/service` | 503 (`service_not_configured`) if `MISHKA_SERVICE_TOKEN` is unset; 401 (`unauthorized`) if the `Authorization: Bearer <token>` header is missing or doesn't match. Returns `{recent: [{title, watched_at, poster_url, rating}], watchlist_count}` — `recent` is the 10 most recent household-wide watches (both users), `watchlist_count` is a documented v1 approximation (films with a `watchlisted` feedback event and no `Watch` row yet). |
+
+---
+
 ## Endpoint ↔ phase summary
 
 | Phase | New endpoints |

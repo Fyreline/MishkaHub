@@ -44,5 +44,10 @@ numpy
 argon2-cffi>=23.1
 pyjwt>=2.9
 
+# Test suite (apps/server/tests/) — plain pytest, FastAPI's own
+# TestClient (backed by httpx, already a dependency above) is enough for
+# request/response tests without adding an HTTP-mocking library.
+pytest>=8.0
+
 # Added in later phases:
 #   pandas                 -> Phase 3 §8 (eval/reporting only, not v0)

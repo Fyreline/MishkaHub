@@ -30,6 +30,7 @@ from .routers import (
     import_,
     media,
     recommendations,
+    service,
     settings,
     tmdb,
     upcoming,
@@ -163,6 +164,11 @@ def create_app() -> FastAPI:
     # /api/auth/me enforces auth itself via its own Depends(current_user).
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
+    # /api/activity/service is for Sukumo (a separate sibling service, not a
+    # household member) — it has its own static-token auth (app/routers/
+    # service.py), so it must NOT get the blanket per-user JWT dependency
+    # below, same as health/auth above.
+    app.include_router(service.router, prefix="/api")
     app.include_router(tmdb.router, prefix="/api", dependencies=[Depends(current_user)])
     app.include_router(films.router, prefix="/api", dependencies=[Depends(current_user)])
     app.include_router(
