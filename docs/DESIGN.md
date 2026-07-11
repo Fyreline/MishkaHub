@@ -10,6 +10,13 @@ Purpose: the visual + interaction contract for the Mishka Hub web app. Direction
 
 ## 1. Anthropic aesthetic — verified source
 
+> ⚠️ **Colour values in this section are historical.** The shipped palette is the shared
+> household **Aizome** scheme (crimson/indigo/mint, repainted 2026-07-07) — read live
+> values from `apps/web/src/theme.css` (a synced mirror; canonical in
+> `learningLanguageMachine`) and the cross-app spec in `docs/HOUSEHOLD-DESIGN.md`.
+> The token *names*, roles, typography, spacing, component specs, and drag physics below
+> remain authoritative; only the hexes in §1a/§1d and the dark-variant note are superseded.
+
 Tokens below are extracted from Anthropic's live brand stylesheet (fetched 2026-07-03): [anthropic.com](https://www.anthropic.com) → [`ant-brand.shared.….min.css`](https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/css/ant-brand.shared.67f55a9666b2ae2332f5f893.587c16f3e.min.css). Their system in one line: **ivory paper, slate ink, clay accent, hairline borders instead of shadows, 8px-family radii, roomy spacing, geometric sans with a serif display accent.**
 
 ### 1a. Verified palette (Anthropic swatch → Mishka Hub token)
