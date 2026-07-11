@@ -17,7 +17,13 @@ Response shape::
 
     {
       "recent": [
-        {"title": str, "watched_at": str, "poster_url": str | null, "rating": float | null},
+        {
+          "title": str,
+          "watched_at": str,
+          "poster_url": str | null,
+          "rating": float | null,
+          "user_email": str,
+        },
         ... up to 10, most-recent-first
       ],
       "watchlist_count": int
@@ -25,7 +31,12 @@ Response shape::
 
 ``recent`` is a single household-wide "we watched" feed — Mishka is a
 2-person shared household app (user ids 1 and 2), and this is not scoped to
-either user individually. Rows are ordered by
+either user individually. Each row's ``user_email`` is the email of the
+``Watch.user_id`` that logged that specific viewing — i.e. who actually
+watched it, not "either household member" — so downstream consumers (e.g.
+Sukumo's journal mapper) can attribute a watch to its watcher instead of
+treating every row as belonging to a single "primary" user. Rows are ordered
+by
 ``COALESCE(watched_date, created_at)`` descending (most watches have a
 ``watched_date``; a few in-app/edge-case rows only have ``created_at``),
 tie-broken by ``Watch.id`` descending. Each row's ``rating`` is that specific
@@ -56,7 +67,7 @@ from sqlalchemy.orm import Session
 from ..clients.tmdb import TMDBClient
 from ..db import get_session
 from ..errors import MishkaHTTPException
-from ..models import FeedbackEvent, Film, Rating, Watch
+from ..models import FeedbackEvent, Film, Rating, User, Watch
 
 router = APIRouter(tags=["service"])
 
@@ -104,12 +115,14 @@ async def get_service_activity(session: Session = Depends(get_session)) -> dict:
     recent = []
     for watch, film in rows:
         rating_row = session.get(Rating, (watch.user_id, watch.film_id))
+        watcher = session.get(User, watch.user_id)
         recent.append(
             {
                 "title": film.title,
                 "watched_at": watch.watched_date or watch.created_at,
                 "poster_url": TMDBClient.poster_url(film.poster_path),
                 "rating": rating_row.rating if rating_row else None,
+                "user_email": watcher.email,
             }
         )
 

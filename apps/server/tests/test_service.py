@@ -106,9 +106,24 @@ def test_200_with_correct_token(
     assert [item["title"] for item in recent] == expected_titles_in_order
 
     for item in recent:
-        assert set(item.keys()) == {"title", "watched_at", "poster_url", "rating"}
+        assert set(item.keys()) == {
+            "title",
+            "watched_at",
+            "poster_url",
+            "rating",
+            "user_email",
+        }
 
     by_title = {item["title"]: item for item in recent}
+
+    # Attribution: watches must carry the email of whoever actually logged
+    # them (Watch.user_id), not a single household-wide value. Films One and
+    # Six were watched by user 1 ("one@example.test"); Films Two and Four by
+    # user 2 ("two@example.test") — see _seed().
+    assert by_title["Film One"]["user_email"] == "one@example.test"
+    assert by_title["Film Six"]["user_email"] == "one@example.test"
+    assert by_title["Film Two"]["user_email"] == "two@example.test"
+    assert by_title["Film Four"]["user_email"] == "two@example.test"
 
     assert by_title["Film One"]["rating"] == 4.5
     assert by_title["Film One"]["poster_url"] == "https://image.tmdb.org/t/p/w500/one.jpg"

@@ -18,6 +18,13 @@ Fixtures:
   ``app.state.settings`` in the app's lifespan, so mutating the live object
   is the standard way to flip a setting for one test (pydantic-settings +
   lru_cache pattern also used in the sibling Michi/Sukumo repos).
+- ``_clear_service_token`` (autouse): on a dev machine, apps/server/.env
+  carries the real MISHKA_SERVICE_TOKEN so the app can run for real outside
+  of tests — pydantic-settings loads it at ``get_settings()`` time regardless
+  of the test's own shell env. Without clearing it, tests that expect no
+  token configured (the 503 case) leak in that real value and fail. This
+  resets it to "" before every test and restores the real value afterward;
+  ``service_token`` above still works normally on top of this.
 """
 from __future__ import annotations
 
@@ -59,6 +66,17 @@ def db_session() -> Iterator[Session]:
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _clear_service_token() -> Iterator[None]:
+    settings = get_settings()
+    original = settings.service_token
+    settings.service_token = ""
+    try:
+        yield
+    finally:
+        settings.service_token = original
 
 
 @pytest.fixture()
