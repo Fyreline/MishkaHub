@@ -1210,18 +1210,22 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
 function CatMark() {
   return (
     <svg viewBox="0 0 32 32" aria-hidden className="h-8 w-8 text-clay">
-      <circle cx="8.75" cy="11.6" r="2.8" fill="none" stroke="currentColor" strokeWidth="2" />
-      <circle cx="17.4" cy="10" r="4.4" fill="none" stroke="currentColor" strokeWidth="2" />
-      <rect x="4.85" y="14.4" width="18" height="12" rx="1" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M22.85,20.4 L26.1,17.4 L26.1,23.4 Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <g transform="translate(8.41,15.73) scale(0.34)">
-        <path
-          d="M4,9 L2,1.5 L10,7.5 Q16,4 22,7.5 L30,1.5 L28,9 Q30.5,14.5 28,20 Q24.5,26 16,26 Q7.5,26 4,20 Q1.5,14.5 4,9 Z"
-          fill="currentColor"
-        />
-        <circle cx="12" cy="16.5" r="1.6" fill="var(--color-paper)" />
-        <circle cx="20" cy="16.5" r="1.6" fill="var(--color-paper)" />
-        <path d="M15,20 L17,20 L16,21.3 Z" fill="var(--color-paper)" />
+      {/* +0.5 x-nudge centres the painted extents in the viewBox — keep in
+          step with public/film-cat-icon.svg */}
+      <g transform="translate(0.5 0)">
+        <circle cx="8.75" cy="11.6" r="2.8" fill="none" stroke="currentColor" strokeWidth="2" />
+        <circle cx="17.4" cy="10" r="4.4" fill="none" stroke="currentColor" strokeWidth="2" />
+        <rect x="4.85" y="14.4" width="18" height="12" rx="1" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M22.85,20.4 L26.1,17.4 L26.1,23.4 Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <g transform="translate(8.41,15.73) scale(0.34)">
+          <path
+            d="M4,9 L2,1.5 L10,7.5 Q16,4 22,7.5 L30,1.5 L28,9 Q30.5,14.5 28,20 Q24.5,26 16,26 Q7.5,26 4,20 Q1.5,14.5 4,9 Z"
+            fill="currentColor"
+          />
+          <circle cx="12" cy="16.5" r="1.6" fill="var(--color-paper)" />
+          <circle cx="20" cy="16.5" r="1.6" fill="var(--color-paper)" />
+          <path d="M15,20 L17,20 L16,21.3 Z" fill="var(--color-paper)" />
+        </g>
       </g>
     </svg>
   )
