@@ -207,6 +207,24 @@ Encouraging without being a golden retriever: *"Nice — that one's sticking."* 
 - Favicons hardcode `clay` + `paper` hexes (documented exception) — update them on any
   repaint: `michi-icon.svg`, `cat-icon.svg`, `torii-icon.svg`, plus newer siblings.
 
+**App icons (home screen).** The rules that make iOS 26 give the layered "liquid
+glass" treatment instead of a flat tile — learned by comparing the fleet on a real
+home screen (2026-07-11):
+
+- `apple-touch-icon.png`: 180×180, **full-bleed opaque square, alpha channel
+  stripped, no baked rounded corners** — iOS applies its own mask and lighting.
+  Transparent backgrounds or pre-rounded corners render as a flat slab. Glyph centred
+  at ~65–70% of the canvas on a `paper` ground.
+- Generate it with a committed `scripts/generate-*.mjs` (sharp as devDependency —
+  Japan_website's `generate-pwa-icons.mjs` is the reference), never by hand-export;
+  hardcoded `clay`/`paper` values in icon scripts are part of the favicon exception.
+- **Subpath-safe hrefs**: apps deployed as GitHub Pages project sites serve under
+  `/<repo>/` — icon/manifest `<link>`s must use Vite's `%BASE_URL%` prefix, never
+  absolute `/…` paths (an absolute path 404s in prod and iOS silently falls back to a
+  flat screenshot tile).
+- Manifest icons: `pwa-192`/`pwa-512` may keep the favicon's rounded ground;
+  `maskable` variants are full-bleed with the glyph inside the central 80% safe zone.
+
 ## 9. New-app checklist
 
 1. Scaffold `apps/web` + `apps/server`; copy `index.css` structure from Michi; add the
@@ -219,7 +237,8 @@ Encouraging without being a golden retriever: *"Nice — that one's sticking."* 
    signature interaction — budget the tuning time there.
 5. Person 1 = clay, person 2 = sky, auth proxies to Mishka Hub.
 6. Sticky header + mobile bottom bar shell; flat `currentColor` mascot mark; favicon
-   with hardcoded clay/paper.
+   with hardcoded clay/paper; apple-touch-icon per the §8 app-icon rules (opaque
+   full-bleed square via a committed sharp script, `%BASE_URL%`-safe hrefs).
 7. Write the app's own `docs/DESIGN.md` for its unique surfaces; colours by token name
    only. British microcopy, no exclamation marks, no red.
 8. Gate: reduced-motion path, 44px targets, keyboard focus rings, Lighthouse a11y ≥95.
